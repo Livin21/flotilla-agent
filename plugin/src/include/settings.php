@@ -2,6 +2,9 @@
 /* Flotilla Agent settings backend. Pure functions + a tiny POST handler used by FlotillaAgent.page. */
 define('FLOTILLA_CFG', '/boot/config/plugins/flotilla-agent/flotilla-agent.cfg');
 define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
+// Must track plugin/flotilla-agent.plg's <!ENTITY version> -- this is the "installed" side of
+// Task 13 §8's min-agent comparison (see flotilla_min_agent_notice() below).
+define('FLOTILLA_AGENT_VERSION', '2026.07.26');
 
 function flotilla_b64url($bytes) { return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '='); }
 
@@ -160,6 +163,50 @@ function flotilla_valid_relay($v) {
   if (filter_var($v, FILTER_VALIDATE_URL) === false) return false;
   $scheme = strtolower((string)parse_url($v, PHP_URL_SCHEME));
   return $scheme === 'http' || $scheme === 'https';
+}
+
+// Path to heartbeat.sh's last-captured relay response headers (Task 13 §8; see the -D flag
+// in plugin/src/scripts/heartbeat.sh). Honors FLOTILLA_HEADERS purely for testability --
+// mirrors flotilla_var_ini_path()'s FLOTILLA_VAR_INI override above -- production always
+// falls back to the real, hardcoded path when the env var is unset.
+function flotilla_headers_path() {
+  $override = getenv('FLOTILLA_HEADERS');
+  return $override !== false ? $override : '/var/local/flotilla-agent.headers';
+}
+
+/*
+ * Task 13 §8 (spec §8 versioning): the relay advertises the minimum agent version it wants
+ * via the X-Min-Agent response header on every request (flotilla-relay's index.js sets this
+ * on every response, including /v1/heartbeat). heartbeat.sh captures that header, once per
+ * beat, to flotilla_headers_path(); this reads it back and decides whether the settings page
+ * should show an "update needed" notice.
+ *
+ * Returns the required version string if $installedVersion is older, or null if no notice
+ * should show. Fails closed to null (no notice) for every kind of bad input -- a
+ * missing/unreadable header file (heartbeat.sh has never run, or couldn't write it, e.g. a
+ * fresh install or a read-only /var/local), a beat that predates this feature, or a
+ * malformed/garbage X-Min-Agent value (a compromised or misconfigured relay) -- because a
+ * wrongly-shown update nag is worse UX than an occasionally-missed one, and this must never
+ * be capable of fataling out the settings page.
+ *
+ * Comparison uses version_compare(), NOT a lexicographic string comparison: this project's
+ * own agent version is calendar-shaped ("2026.07.26"), and a naive string/`>` compare gets
+ * segments like "9" vs "10" backwards (e.g. "2026.9.1" would lexicographically compare
+ * *greater* than "2026.10.1", the opposite of the real chronological order). version_compare
+ * splits on '.' and compares each numeric segment as a number, which is what a human means
+ * by "newer version".
+ */
+function flotilla_min_agent_notice($installedVersion) {
+  if (!is_string($installedVersion) || $installedVersion === '') return null;
+  $path = flotilla_headers_path();
+  if (!is_readable($path)) return null;
+  $hdrs = @file_get_contents($path);
+  if (!is_string($hdrs) || $hdrs === '') return null;
+  // Bounded digit-group count/width: enough for any real dotted version, small enough that
+  // a garbage/oversized header value can't cause pathological work.
+  if (!preg_match('/^X-Min-Agent:\s*([0-9]{1,9}(?:\.[0-9]{1,9}){0,9})\s*$/mi', $hdrs, $m)) return null;
+  $minAgent = $m[1];
+  return version_compare($installedVersion, $minAgent, '<') ? $minAgent : null;
 }
 
 /*

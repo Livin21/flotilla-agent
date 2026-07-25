@@ -7,6 +7,10 @@ $cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== '';
 $csrf = flotilla_csrf_token();
 $csrfField = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf !== false ? $csrf : '') . '">';
 $errList = isset($_GET['err']) ? explode(',', $_GET['err']) : [];
+// Task 13 §8: only meaningful once paired (heartbeat.sh -- and therefore the header capture
+// it does -- only ever runs against a real pairing). flotilla_min_agent_notice() itself
+// already fails closed to null on any missing/malformed input, never fatals.
+$minAgentNotice = $paired ? flotilla_min_agent_notice(FLOTILLA_AGENT_VERSION) : null;
 ?>
 <script src="/plugins/flotilla-agent/js/qrcode.min.js"></script>
 <div style="max-width:640px">
@@ -18,6 +22,9 @@ $errList = isset($_GET['err']) ? explode(',', $_GET['err']) : [];
 <form method="post"><input type="hidden" name="action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
 <?php else: ?>
 <p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
+<?php if ($minAgentNotice !== null): ?>
+<p style="color:orange"><b>Update needed:</b> the relay requires agent ≥ <?= htmlspecialchars($minAgentNotice) ?> — this install is <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?>. Update the plugin from Community Applications.</p>
+<?php endif; ?>
 <div id="qr"></div>
 <script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>
 <p>Manual code:</p><textarea readonly rows="3" style="width:100%"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>

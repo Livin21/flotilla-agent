@@ -53,6 +53,25 @@ NAME="heartbeat STATE=going-down posts going-down state"
 STATE="going-down" FLOTILLA_CFG="$CFG" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
 t [ "$(tail -1 "$CAP" | jq -r '.body | fromjson | .state')" = "going-down" ]
 
+# Task 13 §8: heartbeat.sh captures the relay's X-Min-Agent response header so
+# FlotillaAgent.page can warn about a stale agent. capture_server.py sends that header
+# on every response (mirroring flotilla-relay), so this proves the -D capture actually
+# lands, then proves the capture is never allowed to endanger heartbeat delivery itself.
+NAME="heartbeat captures relay's X-Min-Agent response header"
+HDR="$TMP/headers.txt"; rm -f "$HDR"
+FLOTILLA_CFG="$CFG" FLOTILLA_HEADERS="$HDR" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
+t [ "$(grep -i '^X-Min-Agent:' "$HDR" | tr -d '\r\n' | awk '{print $2}')" = "1.0.0" ]
+
+NAME="heartbeat still delivers when the header directory can't be created (never blocks on capture)"
+N=$(wc -l < "$CAP")
+RC=0
+FLOTILLA_CFG="$CFG" FLOTILLA_HEADERS="/flotilla_test_readonly_$$/headers.txt" \
+  bash plugin/src/scripts/heartbeat.sh || RC=$?
+sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+NAME="heartbeat exits 0 even when the header directory can't be created"
+t [ "$RC" -eq 0 ]
+
 # 10.255.255.1 black-holes (see note further down); reuse it here to prove
 # HEARTBEAT_TIMEOUT actually reaches curl's -m flag. The stopping_array hook
 # passes HEARTBEAT_TIMEOUT=2 for its synchronous going-down send, specifically
