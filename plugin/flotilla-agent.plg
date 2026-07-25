@@ -18,6 +18,7 @@ cat &gt; /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh &lt;&
 #!/bin/bash
 exec bash /usr/local/emhttp/plugins/flotilla-agent/scripts/agent.sh
 EOF
+chmod +x /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
 # heartbeat cron
 echo "* * * * * bash &emhttp;/scripts/heartbeat.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-agent.cron
 update_cron

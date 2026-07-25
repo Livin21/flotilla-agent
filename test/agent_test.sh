@@ -46,11 +46,34 @@ sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
 NAME="heartbeat posts ok state"
 FLOTILLA_CFG="$CFG" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
 t [ "$(tail -1 "$CAP" | jq -r '.path')" = "/v1/heartbeat" ]
+NAME="heartbeat body state is ok"
+t [ "$(tail -1 "$CAP" | jq -r '.body | fromjson | .state')" = "ok" ]
 
-NAME="relay down: agent exits 0 fast (never blocks notify)"
+NAME="heartbeat STATE=going-down posts going-down state"
+STATE="going-down" FLOTILLA_CFG="$CFG" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
+t [ "$(tail -1 "$CAP" | jq -r '.body | fromjson | .state')" = "going-down" ]
+
+NAME="relay connection-refused: agent exits 0 fast (never blocks notify)"
 START=$(date +%s)
-FLOTILLA_CFG="$CFG" RELAY_OVERRIDE="http://127.0.0.1:1" \
+FLOTILLA_CFG="$CFG" FLOTILLA_SEAL=/tmp/flotilla-seal RELAY_OVERRIDE="http://127.0.0.1:1" \
   EVENT="x" SUBJECT="y" DESCRIPTION="" IMPORTANCE="alert" CONTENT="" LINK="" bash plugin/src/scripts/agent.sh
-t [ $(( $(date +%s) - START )) -le 7 ]
+t [ $(( $(date +%s) - START )) -le 2 ]
+
+# 10.255.255.1 is unrouted private space on this box: the SYN is silently dropped
+# (black hole) instead of getting an instant RST like 127.0.0.1:<closed-port> above.
+# That makes this the case that actually proves curl's `-m 5` timeout is what bounds
+# send-event.sh's runtime -- the connection-refused case above would still pass even
+# if `-m 5` were accidentally dropped from the script, since refusal is instant either
+# way. Verified directly on this machine: `curl -s -m 5 ... http://10.255.255.1:1/...`
+# hangs for the full ~5.0s then exits 28. If 10.255.255.1 answers instantly on some
+# other network (some ISPs/VPNs RST unroutable space), swap in an address that
+# genuinely black-holes there and note it here.
+NAME="relay black-holed: agent exits 0 within the curl timeout window (proves -m 5 fires)"
+START=$(date +%s)
+FLOTILLA_CFG="$CFG" FLOTILLA_SEAL=/tmp/flotilla-seal RELAY_OVERRIDE="http://10.255.255.1:1" \
+  EVENT="x" SUBJECT="y" DESCRIPTION="" IMPORTANCE="alert" CONTENT="" LINK="" bash plugin/src/scripts/agent.sh
+ELAPSED=$(( $(date +%s) - START ))
+IN_RANGE=0; [ "$ELAPSED" -ge 4 ] && [ "$ELAPSED" -le 8 ] && IN_RANGE=1
+t [ "$IN_RANGE" -eq 1 ]
 
 exit $FAIL

@@ -19,8 +19,10 @@ case "$EV" in
 esac
 
 PAYLOAD=$(jq -cn --arg e "$EV" --arg s "$SUBJ" --arg d "$DESC" --arg i "$IMP" --arg l "$LNK" \
-  '{v:1,event:$e,subject:$s,description:$d,importance:$i,link:$l,ts:(now|floor)}') || exit 0
-SEALED=$(printf '%s' "$PAYLOAD" | "$SEAL" seal --key "$KEY" 2>/dev/null) || exit 0
+  '{v:1,event:$e,subject:$s,description:$d,importance:$i,link:$l,ts:(now|floor)}' 2>/dev/null) || exit 0
+# Key goes via env, not argv --key: keeps it out of ps output (relevant for
+# containers run with --pid=host).
+SEALED=$(printf '%s' "$PAYLOAD" | FLOTILLA_SEAL_KEY="$KEY" "$SEAL" seal 2>/dev/null) || exit 0
 jq -cn --arg p "$PAIRING_ID" --arg x "$SEALED" --arg lv "$LEVEL" '{pairingID:$p,sealed:$x,level:$lv}' | \
   curl -s -m 5 -X POST -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
        -d @- "$RELAY/v1/push" >/dev/null 2>&1

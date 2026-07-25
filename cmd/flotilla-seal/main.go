@@ -1,4 +1,6 @@
 // flotilla-seal: keygen | seal --key <b64url> | open --key <b64url>. stdin→stdout.
+// Key may also come from the FLOTILLA_SEAL_KEY env var when --key is omitted
+// (keeps the key off argv/ps); --key takes precedence when both are given.
 package main
 
 import (
@@ -13,11 +15,20 @@ import (
 
 func die(msg string) { fmt.Fprintln(os.Stderr, "flotilla-seal: "+msg); os.Exit(1) }
 
+// keyArg resolves the key from --key <b64url> if present (back-compat, and it
+// always wins), else from the FLOTILLA_SEAL_KEY env var (keeps the secret off
+// argv/ps output for callers like send-event.sh).
 func keyArg() []byte {
-	if len(os.Args) < 4 || os.Args[2] != "--key" {
-		die("usage: flotilla-seal seal|open --key <b64url>")
+	var b64 string
+	switch {
+	case len(os.Args) >= 4 && os.Args[2] == "--key":
+		b64 = os.Args[3]
+	case os.Getenv("FLOTILLA_SEAL_KEY") != "":
+		b64 = os.Getenv("FLOTILLA_SEAL_KEY")
+	default:
+		die("usage: flotilla-seal seal|open --key <b64url> (or set FLOTILLA_SEAL_KEY env var; --key wins if both given)")
 	}
-	k, err := base64.RawURLEncoding.DecodeString(os.Args[3])
+	k, err := base64.RawURLEncoding.DecodeString(b64)
 	if err != nil || len(k) != 32 {
 		die("key must be 32 bytes base64url")
 	}
