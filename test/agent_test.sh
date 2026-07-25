@@ -53,6 +53,28 @@ NAME="heartbeat STATE=going-down posts going-down state"
 STATE="going-down" FLOTILLA_CFG="$CFG" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
 t [ "$(tail -1 "$CAP" | jq -r '.body | fromjson | .state')" = "going-down" ]
 
+# 10.255.255.1 black-holes (see note further down); reuse it here to prove
+# HEARTBEAT_TIMEOUT actually reaches curl's -m flag. The stopping_array hook
+# passes HEARTBEAT_TIMEOUT=2 for its synchronous going-down send, specifically
+# so a planned reboot/shutdown can't stall past a couple of seconds waiting on
+# an unreachable relay. Uncapped, heartbeat.sh keeps its normal 5s cron budget.
+BHCFG="$TMP/flotilla-agent-blackhole.cfg"
+sed 's#^RELAY=.*#RELAY="http://10.255.255.1:1"#' "$CFG" > "$BHCFG"
+
+NAME="heartbeat default timeout (~5s) unaffected against a black-holed relay"
+START=$(date +%s)
+FLOTILLA_CFG="$BHCFG" bash plugin/src/scripts/heartbeat.sh
+ELAPSED=$(( $(date +%s) - START ))
+IN_RANGE=0; [ "$ELAPSED" -ge 4 ] && [ "$ELAPSED" -le 8 ] && IN_RANGE=1
+t [ "$IN_RANGE" -eq 1 ]
+
+NAME="HEARTBEAT_TIMEOUT=2 reaches curl -m, bounding the going-down heartbeat to ~2s"
+START=$(date +%s)
+HEARTBEAT_TIMEOUT=2 STATE="going-down" FLOTILLA_CFG="$BHCFG" bash plugin/src/scripts/heartbeat.sh
+ELAPSED=$(( $(date +%s) - START ))
+IN_RANGE=0; [ "$ELAPSED" -ge 1 ] && [ "$ELAPSED" -le 4 ] && IN_RANGE=1
+t [ "$IN_RANGE" -eq 1 ]
+
 NAME="relay connection-refused: agent exits 0 fast (never blocks notify)"
 START=$(date +%s)
 FLOTILLA_CFG="$CFG" FLOTILLA_SEAL=/tmp/flotilla-seal RELAY_OVERRIDE="http://127.0.0.1:1" \
