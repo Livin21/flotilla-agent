@@ -52,11 +52,20 @@ b64url_byte_len() {
 # Cleans up any temp file left behind by an aborted download/write below (a
 # `set -e` exit from curl, a validation failure, ...); harmless once the temp
 # has already been moved into place (rm -f on a path that no longer exists).
+#
+# The trailing `return 0` matters: bash uses the exit status of the *last
+# command run in an EXIT trap* as the process's own exit status whenever
+# that command doesn't itself succeed — even overriding an explicit `exit N`
+# that already ran before the trap fired. Without it, `[ -n "$TMP_CONF" ] &&
+# rm -f "$TMP_CONF"` is false on every successful run (TMP_CONF is "" by
+# then), so every successful install — fresh or re-install — silently exited
+# 1. Confirmed empirically: even `exit 7` upstream got overridden to 1.
 TMP_BIN=""
 TMP_CONF=""
 cleanup() {
   [ -n "$TMP_BIN" ] && rm -f "$TMP_BIN"
   [ -n "$TMP_CONF" ] && rm -f "$TMP_CONF"
+  return 0
 }
 trap cleanup EXIT
 

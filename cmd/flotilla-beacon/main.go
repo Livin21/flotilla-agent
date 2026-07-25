@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -82,19 +83,29 @@ func mapSeverity(sev string) (importance, level string) {
 	}
 }
 
-// httpClient is shared by every outbound call to the relay. Its 5s timeout is
-// what makes the going-down heartbeat sent from the SIGTERM handler bounded —
-// a hung or unreachable relay can delay shutdown by at most this long, never
-// indefinitely (see beacon/flotilla-beacon.service's TimeoutStopSec, sized
-// with headroom above this).
+// httpClient is shared by every outbound call to the relay, including the
+// periodic "ok" heartbeat: its 5s timeout is what bounds an "ok" call that
+// isn't pre-empted for some other reason. The going-down heartbeat instead
+// uses its own shorter goingDownTimeout via a per-request context (see
+// heartbeatSender), so a hung or unreachable relay can never delay shutdown
+// by more than that, regardless of what else this client's Timeout is set
+// to (see beacon/flotilla-beacon.service's TimeoutStopSec, sized with
+// headroom above the sum of both).
 var httpClient = &http.Client{Timeout: 5 * time.Second}
 
 func post(cfg config, path string, body any) error {
+	return postCtx(context.Background(), cfg, path, body)
+}
+
+// postCtx is post with an explicit, cancellable context — used by
+// heartbeatSender so an in-flight periodic "ok" can be preempted rather than
+// waited out (see heartbeatSender's doc comment).
+func postCtx(ctx context.Context, cfg config, path string, body any) error {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", cfg.Relay+path, bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(ctx, "POST", cfg.Relay+path, bytes.NewReader(buf))
 	if err != nil {
 		return err
 	}
@@ -168,7 +179,14 @@ func handleWebhook(cfg config, w http.ResponseWriter, r *http.Request) {
 }
 
 func heartbeat(cfg config, state string) {
-	if err := post(cfg, "/v1/heartbeat", map[string]string{"pairingID": cfg.Pairing, "state": state}); err != nil {
+	heartbeatCtx(context.Background(), cfg, state)
+}
+
+// heartbeatCtx is heartbeat with an explicit context, so a caller can bound
+// or cancel the underlying request without waiting on httpClient's full 5s
+// timeout.
+func heartbeatCtx(ctx context.Context, cfg config, state string) {
+	if err := postCtx(ctx, cfg, "/v1/heartbeat", map[string]string{"pairingID": cfg.Pairing, "state": state}); err != nil {
 		log.Printf("heartbeat failed: %v", err)
 	}
 }
@@ -191,42 +209,123 @@ func isLoopback(addr string) bool {
 	return host == "localhost"
 }
 
-// heartbeatSender serializes every outbound heartbeat behind a mutex and
-// makes the "going-down" heartbeat provably the last one the relay can see
-// for a given shutdown.
+// goingDownTimeout bounds going-down's own network attempt. It's
+// deliberately shorter than httpClient's shared 5s timeout: going-down is
+// the last thing shutdown does, so it gets a tight, dedicated budget rather
+// than the generic per-request timeout every other call uses. See
+// heartbeatSender's doc comment for how this fits into the overall shutdown
+// budget, and beacon/flotilla-beacon.service's TimeoutStopSec comment for
+// the systemd-level margin above it.
+const goingDownTimeout = 3 * time.Second
+
+// heartbeatSender makes the "going-down" heartbeat provably the last one the
+// relay can see for a given shutdown, and bounds how long that takes even
+// when a periodic "ok" is mid-flight against a hanging relay.
 //
-// Without this, the periodic 60s "ok" heartbeat runs on its own
+// Without any coordination, the periodic 60s "ok" heartbeat runs on its own
 // uncoordinated goroutine, and a tick landing at (or just after) the moment
 // SIGTERM fires can race the going-down send — the relay then sees
 // "going-down" followed by "ok", re-arms its 180s dead-man alarm (any
 // non-"going-down" state does that, per §P), and can later page a false
 // "server unreachable" for what was actually a clean, planned reboot.
 //
-// send sets stopped = true *before* making the going-down network call, so
-// a concurrent "ok" blocked on mu — even one that started before
-// going-down did — either completes strictly before going-down is sent (if
-// it wins the race for the lock first) or is suppressed outright as soon as
-// it acquires the lock afterward. Either way, going-down is the last
-// heartbeat that ever reaches the wire for this process.
+// An earlier version fixed the race by serializing every send behind a
+// mutex held across the network call: going-down would block on that mutex
+// until an in-flight "ok" released it naturally. That closed the ordering
+// hole but reopened a latency one — an "ok" in flight against a hanging
+// relay would run out its own full httpClient timeout before going-down's
+// call could even start, compounding two timeouts back-to-back (measured
+// ~10s against a 10s systemd TimeoutStopSec: SIGKILL territory).
+//
+// This version fixes it by preemption instead of waiting: send()
+//   - sets stopped = true before doing anything else, so no *new* "ok" can
+//     start once shutdown has begun (a send("ok") that loses the race for mu
+//     sees stopped and returns without ever touching the network);
+//   - cancels the context of an "ok" already in flight, so it aborts almost
+//     immediately instead of running to its natural timeout, and *waits* for
+//     that abort to actually land (h.inFlightDone) before proceeding — this
+//     keeps the strict ordering guarantee (going-down's request is never
+//     dispatched while an "ok" from the same sender could still be in transit)
+//     but bounds the wait to "however long a cancelled request takes to
+//     unwind" (milliseconds) rather than "however long the relay takes to
+//     respond, or 5s, whichever is later";
+//   - then sends going-down with its own short, independent budget
+//     (goingDownTimeout), so even a relay that never responds at all can't
+//     hold shutdown hostage for longer than that.
+//
+// The mutex itself is only ever held for bookkeeping (reading/writing
+// stopped, cancel, inFlightDone) — never across a network call — which is
+// what makes the preemption possible: the old design deadlocked shutdown's
+// *ability to cancel* behind the very call it needed to cancel.
 type heartbeatSender struct {
 	cfg config
 
-	mu      sync.Mutex
-	stopped bool
+	mu           sync.Mutex
+	stopped      bool
+	cancel       context.CancelFunc // cancels the "ok" request currently in flight, if any
+	inFlightDone chan struct{}      // closed when that request's heartbeatCtx call returns
 }
 
 func newHeartbeatSender(cfg config) *heartbeatSender { return &heartbeatSender{cfg: cfg} }
 
 func (h *heartbeatSender) send(state string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.stopped {
+	if state == "going-down" {
+		h.sendGoingDown()
 		return
 	}
-	if state == "going-down" {
-		h.stopped = true
+	h.sendOK(state)
+}
+
+// sendOK sends a non-going-down (periodic "ok") heartbeat, recording a
+// cancel func and completion signal that a concurrent going-down can use to
+// preempt it. Never called with state == "going-down".
+func (h *heartbeatSender) sendOK(state string) {
+	h.mu.Lock()
+	if h.stopped {
+		h.mu.Unlock()
+		return
 	}
-	heartbeat(h.cfg, state)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	h.cancel = cancel
+	h.inFlightDone = done
+	h.mu.Unlock()
+
+	heartbeatCtx(ctx, h.cfg, state)
+	close(done)
+	cancel() // release ctx's resources; no-op if already cancelled by shutdown
+
+	h.mu.Lock()
+	if h.inFlightDone == done { // still the one we set — nothing newer to preserve
+		h.cancel = nil
+		h.inFlightDone = nil
+	}
+	h.mu.Unlock()
+}
+
+// sendGoingDown is idempotent (a second SIGTERM/SIGINT is a no-op here) and
+// is the only path that ever sets stopped = true.
+func (h *heartbeatSender) sendGoingDown() {
+	h.mu.Lock()
+	if h.stopped {
+		h.mu.Unlock()
+		return
+	}
+	h.stopped = true
+	cancel := h.cancel
+	done := h.inFlightDone
+	h.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+		if done != nil {
+			<-done // bounded: a cancelled request unwinds in milliseconds, not httpClient's full timeout
+		}
+	}
+
+	ctx, cancelDown := context.WithTimeout(context.Background(), goingDownTimeout)
+	defer cancelDown()
+	heartbeatCtx(ctx, h.cfg, "going-down")
 }
 
 // heartbeatLoop sends an immediate "ok" then one every interval, until done
@@ -274,9 +373,12 @@ func serve(cfg config, sig <-chan os.Signal) error {
 		// h.send's mutex+stopped guard is what actually makes going-down
 		// provably last; see heartbeatSender's doc comment.
 		close(done)
-		// Bounded by httpClient's 5s timeout (see its comment above) — this
-		// can never hang shutdown indefinitely, even against an unreachable
-		// or hung relay. A second SIGTERM/SIGINT arriving while this is in
+		// Bounded by heartbeatSender's preemption logic (see its doc
+		// comment): any in-flight "ok" is cancelled rather than waited out,
+		// and going-down's own call has its own goingDownTimeout budget — so
+		// this can never hang shutdown indefinitely, even against an
+		// unreachable or hung relay, and never compounds two full timeouts
+		// back-to-back. A second SIGTERM/SIGINT arriving while this is in
 		// flight is either queued in the (size-1, buffered) channel or
 		// dropped by the runtime if that slot is already full: os/signal
 		// never blocks the sender, and this goroutine only ever reads `sig`

@@ -7,13 +7,19 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/flotilla-beacon
 Restart=on-failure
 RestartSec=5
-# The SIGTERM handler sends a bounded (~5s client timeout) going-down
-# heartbeat before closing the listener, so the relay's dead-man switch
-# doesn't page on a planned reboot/stop. 10s gives that call headroom to
-# finish (or time out) and the process to exit cleanly, without letting a
-# stuck shutdown stall the rest of the host's stop sequence — systemd
-# SIGKILLs once this elapses.
-TimeoutStopSec=10
+# The SIGTERM handler pre-empts (cancels) any periodic "ok" heartbeat still
+# in flight rather than waiting it out, then sends going-down with its own
+# ~3s budget (goingDownTimeout in cmd/flotilla-beacon/main.go) before
+# closing the listener — so the relay's dead-man switch doesn't page on a
+# planned reboot/stop. An earlier version serialized sends behind a mutex
+# held across the network call instead: a stuck "ok" and a stuck going-down
+# could compound to ~10s, at the edge of (and occasionally past) a 10s
+# TimeoutStopSec, letting systemd SIGKILL before going-down ever reached the
+# relay. 15s gives real margin above the ~3s worst case (going-down's own
+# timeout; the pre-empted "ok" no longer contributes meaningfully) and the
+# process's own exit, without letting a genuinely stuck shutdown stall the
+# rest of the host's stop sequence — systemd SIGKILLs once this elapses.
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target

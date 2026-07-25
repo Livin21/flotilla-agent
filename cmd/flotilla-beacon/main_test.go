@@ -433,3 +433,70 @@ func TestSecondSignalDoesNotBlockShutdown(t *testing.T) {
 		t.Fatal("serve did not shut down promptly with a signal already queued")
 	}
 }
+
+// The compound case a code review caught: a periodic "ok" heartbeat is
+// in flight (blocked against a relay that never responds) at the exact
+// moment SIGTERM arrives. Serializing sends behind a mutex held across the
+// network call (the original F1 fix) meant going-down had to wait out the
+// "ok" call's *entire* natural timeout before going-down's own call could
+// even start — two timeouts back-to-back, ~10s measured in practice,
+// against a TimeoutStopSec of only 10s (SIGKILL territory, reintroducing
+// the false "server unreachable" push going-down exists to prevent).
+//
+// This drives the real shutdown routine (serve, not the sender in
+// isolation) against a relay whose handler blocks forever on every request,
+// so the periodic loop's immediate startup "ok" is still in flight when
+// SIGTERM fires. It asserts two things: the relay did see an attempted
+// going-down request (proves the preemption didn't just skip sending it),
+// and total shutdown time stays well under systemd's timeout (proves the
+// in-flight "ok" was pre-empted rather than waited out).
+func TestSIGTERMCompoundShutdownBoundedWithOKInFlightAgainstHangingRelay(t *testing.T) {
+	gotGoingDown := make(chan struct{}, 1)
+	block := make(chan struct{}) // never closed until teardown: every request to this relay hangs forever
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ PairingID, State string }
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.State == "going-down" {
+			select {
+			case gotGoingDown <- struct{}{}:
+			default:
+			}
+		}
+		<-block // simulates a hung/unreachable relay: never responds to anything
+	}))
+	defer func() { close(block); relay.Close() }()
+	cfg := testCfg(relay.URL)
+	cfg.Listen = "127.0.0.1:0"
+
+	sig := make(chan os.Signal, 1)
+	errCh := make(chan error, 1)
+	go func() { errCh <- serve(cfg, sig) }()
+	// Let ListenAndServe bind and heartbeatLoop's immediate startup "ok"
+	// actually reach the relay and block in its handler, so it's genuinely
+	// in flight (not just scheduled) when SIGTERM fires below.
+	time.Sleep(150 * time.Millisecond)
+
+	start := time.Now()
+	sig <- syscall.SIGTERM
+
+	select {
+	case err := <-errCh:
+		elapsed := time.Since(start)
+		if err != nil {
+			t.Fatalf("serve returned error: %v", err)
+		}
+		// goingDownTimeout (3s) plus scheduling slack — nowhere near the old
+		// compounded ~10s, and well under systemd's TimeoutStopSec (15s).
+		if elapsed > 5*time.Second {
+			t.Fatalf("compound shutdown took %v, want well under systemd's timeout (in-flight \"ok\" should be pre-empted, not waited out)", elapsed)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("serve did not shut down within the compound-shutdown bound")
+	}
+
+	select {
+	case <-gotGoingDown:
+	default:
+		t.Fatal("relay never saw a going-down heartbeat attempt")
+	}
+}
