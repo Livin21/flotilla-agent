@@ -20,9 +20,13 @@ type vec struct {
 
 func mk(name string, keyByte, nonceByte byte, plaintext string) vec {
 	key := make([]byte, 32)
-	for i := range key { key[i] = keyByte }
+	for i := range key {
+		key[i] = keyByte
+	}
 	nonce := make([]byte, 12)
-	for i := range nonce { nonce[i] = nonceByte }
+	for i := range nonce {
+		nonce[i] = nonceByte
+	}
 	aead, _ := chacha20poly1305.New(key)
 	sealed := aead.Seal(nonce, nonce, []byte(plaintext), nil)
 	return vec{name, base64.RawURLEncoding.EncodeToString(key),
