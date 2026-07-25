@@ -1,0 +1,23 @@
+[
+  {
+    "name": "empty",
+    "key_b64url": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "nonce_b64": "AgICAgICAgICAgIC",
+    "plaintext": "",
+    "sealed_b64": "AgICAgICAgICAgICTrqyYGZg6hNs9FvuELvNiw=="
+  },
+  {
+    "name": "unicode",
+    "key_b64url": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI",
+    "nonce_b64": "JCQkJCQkJCQkJCQk",
+    "plaintext": "Tower · disk1 hot — 46 °C ✓",
+    "sealed_b64": "JCQkJCQkJCQkJCQksGjya5n+mh+lD+H4jyY98JC9aVMmt3QD4BpKmjRIUE3BPqKVpH0AMHEy3+GI51ut3g=="
+  },
+  {
+    "name": "payload",
+    "key_b64url": "paWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU",
+    "nonce_b64": "WlpaWlpaWlpaWlpa",
+    "plaintext": "{\"v\":1,\"event\":\"Unraid disk temperature\",\"subject\":\"Warning [TOWER] - disk1 is hot (46 C)\",\"description\":\"WDC_WD40 (sdb)\",\"importance\":\"warning\",\"link\":\"/Main\",\"ts\":1753400000}",
+    "sealed_b64": "WlpaWlpaWlpaWlpaN0gZpQc15FEbLokVHZWm3AtRhbNyZ/XwfQVWyTZFrDNrhKA9iew2RyglTexEi0ebG271H9BofvHOjeKj4nuPNSLOTnrH/h26cziJ5TUdfvBQ54QljThTj7UbMGPugyLTWluztsSgevFceB2BLs63YllPBha6U5QSx0DWRxabiQwaoAyOL4MBMenbD68520xj1Vj9pZ7sdyyCPxrMIoEU/JFKYOv3SKCH/aKQf7C+oWqqzWcbD+gC7H8xilAjIitx"
+  }
+]
