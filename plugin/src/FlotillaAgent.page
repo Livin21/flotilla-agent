@@ -1,0 +1,38 @@
+Menu="Utilities"
+Title="Flotilla Agent"
+Icon="bell"
+---
+<?php require '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
+$cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== ''; ?>
+<script src="/plugins/flotilla-agent/js/qrcode.min.js"></script>
+<div style="max-width:640px">
+<h3>Flotilla Push</h3>
+<?php if (!$paired): ?>
+<p>Pair this server with the Flotilla iOS app. Pairing generates an end-to-end encryption key that never leaves your network except inside the QR code below.</p>
+<form method="post"><input type="hidden" name="action" value="pair"><button type="submit">Pair with Flotilla…</button></form>
+<?php else: ?>
+<p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
+<div id="qr"></div>
+<script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>
+<p>Manual code:</p><textarea readonly rows="3" style="width:100%"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>
+<form method="post" style="margin-top:12px"><input type="hidden" name="action" value="test"><button type="submit">Send test notification</button></form>
+<form method="post"><input type="hidden" name="action" value="save">
+  <h4>Filters</h4>
+  <label>Minimum importance:
+  <select name="LEVEL_MIN">
+    <option value="normal"  <?= $cfg['LEVEL_MIN'] === 'normal'  ? 'selected' : '' ?>>All (notices too)</option>
+    <option value="warning" <?= $cfg['LEVEL_MIN'] === 'warning' ? 'selected' : '' ?>>Warnings & alerts</option>
+    <option value="alert"   <?= $cfg['LEVEL_MIN'] === 'alert'   ? 'selected' : '' ?>>Alerts only</option>
+  </select></label><br>
+  <label><input type="checkbox" name="CAT_DISKS" value="yes" <?= $cfg['CAT_DISKS'] === 'yes' ? 'checked' : '' ?>> Disk events (temperature, SMART, utilization)</label><br>
+  <label><input type="checkbox" name="CAT_ARRAY" value="yes" <?= $cfg['CAT_ARRAY'] === 'yes' ? 'checked' : '' ?>> Array & parity events</label><br>
+  <label><input type="checkbox" name="CAT_OTHER" value="yes" <?= $cfg['CAT_OTHER'] === 'yes' ? 'checked' : '' ?>> Everything else (plugins, status reports)</label><br>
+  <h4>Advanced</h4>
+  <label>Relay URL: <input type="text" name="RELAY" value="<?= htmlspecialchars($cfg['RELAY']) ?>" style="width:100%"></label>
+  <p style="opacity:.7">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at their own deployment.</p>
+  <button type="submit">Save</button>
+</form>
+<form method="post" onsubmit="return confirm('Reset pairing? All paired devices stop receiving pushes until they re-scan.')">
+  <input type="hidden" name="action" value="reset"><button type="submit" style="color:red">Reset pairing</button></form>
+<?php endif; ?>
+</div>
