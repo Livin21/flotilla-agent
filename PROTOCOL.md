@@ -24,8 +24,9 @@ QR / manual code: `flotilla://pair?v=1&id=<pairingID>&k=<b64url K>&s=<b64url S>&
 
 ## Endpoints
 
-All endpoints are under `/v1/`, all bodies are JSON, and all responses carry
-the header `X-Min-Agent: 1.0.0`.
+All endpoints are under `/v1/` (except the standalone `/beacon-install.sh`
+below), all `/v1/` bodies are JSON, and all responses carry the header
+`X-Min-Agent: 1.0.0`.
 
 Auth (every route except `health`): `Authorization: Bearer <b64url S>`. The
 relay stores only `sHashHex = hex(SHA-256(raw S bytes))` — never the secret
@@ -42,6 +43,11 @@ itself. The first valid `enroll` for a `pairingID` creates the pairing record
 | `POST /v1/heartbeat` | `{pairingID, state:"ok"\|"going-down"}` | 200 `{}` | 401 |
 | `DELETE /v1/pairing` | `{pairingID}` | 200 `{ok:true}` | 401 |
 | `GET /v1/health` | — | 200 `{ok:true,minAgent:"1.0.0"}` | — |
+| `GET /beacon-install.sh` | — (not under `/v1/`) | 200, `content-type: text/x-shellscript` | — |
+
+`GET /beacon-install.sh` is public/unauthenticated by design (no secrets in
+the script itself) — it's what makes `curl -fsSL <relay>/beacon-install.sh |
+... bash` (see the invocation below) work without a prior auth step.
 
 `DELETE /v1/pairing` (Task 13) is the server-side revoke: it wipes every key
 the pairing's relay-side state holds (auth hash, device tokens, heartbeat

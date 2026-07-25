@@ -12,6 +12,11 @@ than a synthetic/hardcoded queue-file check."""
 import http.server, json, sys
 out = open(sys.argv[2], "a")
 STATUS = int(sys.argv[3]) if len(sys.argv) > 3 else 202
+class Srv(http.server.HTTPServer):
+    # Explicit (belt-and-suspenders on top of HTTPServer's own default): set SO_REUSEADDR
+    # so a rapid re-run of test/agent_test.sh can immediately rebind 18799/18402 instead of
+    # hitting "Address already in use" while a prior run's sockets drain TIME_WAIT on macOS.
+    allow_reuse_address = True
 class H(http.server.BaseHTTPRequestHandler):
     def _capture(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -24,4 +29,4 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self): self._capture()
     def do_DELETE(self): self._capture()
     def log_message(self, *a): pass
-http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+Srv(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
