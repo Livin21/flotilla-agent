@@ -40,7 +40,19 @@ itself. The first valid `enroll` for a `pairingID` creates the pairing record
 | `POST /v1/push` | `{pairingID, sealed, level:"passive"\|"active"\|"time-sensitive"}` | 202 `{ok:true}` | 401 · 403 no entitled devices · 429 capped |
 | `POST /v1/pve/<pairingID>` | `{severity,title,message}` (plaintext) | 202 | 401 · 403 · 429 |
 | `POST /v1/heartbeat` | `{pairingID, state:"ok"\|"going-down"}` | 200 `{}` | 401 |
+| `DELETE /v1/pairing` | `{pairingID}` | 200 `{ok:true}` | 401 |
 | `GET /v1/health` | — | 200 `{ok:true,minAgent:"1.0.0"}` | — |
+
+`DELETE /v1/pairing` (Task 13) is the server-side revoke: it wipes every key
+the pairing's relay-side state holds (auth hash, device tokens, heartbeat
+state, caps) and cancels any pending dead-man alarm, so revoking can never be
+followed by a final "unreachable" push. It's what the Unraid plugin's
+`plugin/src/scripts/revoke.sh` calls from `flotilla_pair()`'s reset path
+before generating new pairing values, so "Reset pairing" on the server
+actually clears relay-side state instead of silently orphaning it (the app's
+own "Unpair" still only removes its one device token via `DELETE
+/v1/enroll`). The `pairingID` is reusable afterward — a fresh `enroll` with a
+new `S` is indistinguishable from enrolling a pairingID that was never used.
 
 **`flotilla-beacon` (this repo, `cmd/flotilla-beacon`) always uses
 `POST /v1/push`** — it seals every PVE webhook event with the pairing's E2E
@@ -164,3 +176,6 @@ looked up from the app-group shared defaults dictionary `lab.push.names`
   `<pairingID>` (both non-secret) are positional.
 - `plugin/src/scripts/{send-event.sh,heartbeat.sh}` — the Unraid equivalent
   sender, invoked by Unraid's own `notify` agent and a cron job respectively.
+- `plugin/src/scripts/revoke.sh` — calls `DELETE /v1/pairing`; invoked by
+  `flotilla_pair()` (`plugin/src/include/settings.php`) on the "Reset
+  pairing" action, before new pairing values are generated.

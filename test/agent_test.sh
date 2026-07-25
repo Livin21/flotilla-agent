@@ -117,4 +117,36 @@ ELAPSED=$(( $(date +%s) - START ))
 IN_RANGE=0; [ "$ELAPSED" -ge 4 ] && [ "$ELAPSED" -le 8 ] && IN_RANGE=1
 t [ "$IN_RANGE" -eq 1 ]
 
+# Task 13: revoke.sh — called from settings.php's flotilla_pair() on the "Reset
+# pairing" path, before new pairing values are generated, so the relay-side
+# Durable Object doesn't get silently orphaned. Tested directly here (like
+# heartbeat.sh/send-event.sh above), independent of the PHP wiring.
+NAME="revoke posts DELETE /v1/pairing with the correct bearer and body"
+FLOTILLA_CFG="$CFG" bash plugin/src/scripts/revoke.sh; sleep 0.3
+t [ "$(tail -1 "$CAP" | jq -r '.method')" = "DELETE" ]
+NAME="revoke path is /v1/pairing"; t [ "$(tail -1 "$CAP" | jq -r '.path')" = "/v1/pairing" ]
+NAME="revoke auth bearer carries S"; t [ "$(tail -1 "$CAP" | jq -r '.auth')" = "Bearer $S" ]
+NAME="revoke body carries the pairingID and nothing else"
+t [ "$(tail -1 "$CAP" | jq -c '.body | fromjson')" = "$(jq -cn --arg p "11111111-1111-4111-8111-111111111111" '{pairingID:$p}')" ]
+
+NAME="revoke exits 0 without a config (nothing to revoke yet, e.g. first pair)"
+RC=0
+FLOTILLA_CFG="$TMP/no-such.cfg" bash plugin/src/scripts/revoke.sh || RC=$?
+t [ "$RC" -eq 0 ]
+
+NAME="revoke exits 0 fast when the relay refuses the connection (a down relay never blocks reset)"
+START=$(date +%s)
+RC=0
+FLOTILLA_CFG="$CFG" RELAY_OVERRIDE="http://127.0.0.1:1" bash plugin/src/scripts/revoke.sh || RC=$?
+FAST=0; [ "$RC" -eq 0 ] && [ $(( $(date +%s) - START )) -le 2 ] && FAST=1
+t [ "$FAST" -eq 1 ]
+
+NAME="revoke exits 0 within its curl timeout window when the relay is black-holed (proves -m 5 fires)"
+START=$(date +%s)
+RC=0
+FLOTILLA_CFG="$BHCFG" bash plugin/src/scripts/revoke.sh || RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+IN_RANGE=0; [ "$RC" -eq 0 ] && [ "$ELAPSED" -ge 4 ] && [ "$ELAPSED" -le 8 ] && IN_RANGE=1
+t [ "$IN_RANGE" -eq 1 ]
+
 exit $FAIL

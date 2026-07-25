@@ -116,7 +116,20 @@ function flotilla_fix_entities($text) {
   return $head . $body . $tail;
 }
 
+/*
+ * Task 13: "Reset pairing" (the 'reset' action below) reuses this same function as the
+ * initial 'pair' action, so this is the one place that can revoke the OLD pairing at the
+ * relay before its values are overwritten -- while its secret is still known. A brand new
+ * initial pairing has PAIRING_ID/SECRET both empty (flotilla_read_cfg()'s defaults), so
+ * this naturally no-ops on first pair; only a reset (whose $cfg always already has both)
+ * has anything to revoke. Best-effort: revoke.sh itself enforces a 5s timeout and always
+ * exits 0, and this call site doesn't inspect its exit code either, so a relay that's down
+ * (or briefly unreachable) can never block the local reset that follows.
+ */
 function flotilla_pair($cfg) {
+  if (($cfg['PAIRING_ID'] ?? '') !== '' && ($cfg['SECRET'] ?? '') !== '') {
+    shell_exec('bash /usr/local/emhttp/plugins/flotilla-agent/scripts/revoke.sh 2>/dev/null');
+  }
   $cfg['PAIRING_ID'] = strtolower(trim((string)shell_exec('uuidgen')));
   $cfg['SECRET'] = flotilla_b64url(random_bytes(32));
   $cfg['KEY'] = flotilla_b64url(random_bytes(32));
