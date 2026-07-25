@@ -1,0 +1,19 @@
+[Unit]
+Description=Flotilla beacon (PVE push companion)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/flotilla-beacon
+Restart=on-failure
+RestartSec=5
+# The SIGTERM handler sends a bounded (~5s client timeout) going-down
+# heartbeat before closing the listener, so the relay's dead-man switch
+# doesn't page on a planned reboot/stop. 10s gives that call headroom to
+# finish (or time out) and the process to exit cleanly, without letting a
+# stuck shutdown stall the rest of the host's stop sequence — systemd
+# SIGKILLs once this elapses.
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
