@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -104,6 +105,15 @@ func post(cfg config, path string, body any) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Distinct from a network-level failure (caller logs this the same
+		// way, but the message makes clear the relay was reached and didn't
+		// like the request) — a misconfigured secret (401), a capped pairing
+		// (429), or a relay-side error (5xx) would otherwise be silently
+		// swallowed. Never include cfg.Secret here: path and status are all
+		// an operator needs.
+		return fmt.Errorf("relay %s: unexpected status %d", path, resp.StatusCode)
+	}
 	return nil
 }
 
@@ -181,10 +191,61 @@ func isLoopback(addr string) bool {
 	return host == "localhost"
 }
 
-func heartbeatLoop(cfg config) {
-	heartbeat(cfg, "ok")
-	for range time.Tick(60 * time.Second) {
-		heartbeat(cfg, "ok")
+// heartbeatSender serializes every outbound heartbeat behind a mutex and
+// makes the "going-down" heartbeat provably the last one the relay can see
+// for a given shutdown.
+//
+// Without this, the periodic 60s "ok" heartbeat runs on its own
+// uncoordinated goroutine, and a tick landing at (or just after) the moment
+// SIGTERM fires can race the going-down send — the relay then sees
+// "going-down" followed by "ok", re-arms its 180s dead-man alarm (any
+// non-"going-down" state does that, per §P), and can later page a false
+// "server unreachable" for what was actually a clean, planned reboot.
+//
+// send sets stopped = true *before* making the going-down network call, so
+// a concurrent "ok" blocked on mu — even one that started before
+// going-down did — either completes strictly before going-down is sent (if
+// it wins the race for the lock first) or is suppressed outright as soon as
+// it acquires the lock afterward. Either way, going-down is the last
+// heartbeat that ever reaches the wire for this process.
+type heartbeatSender struct {
+	cfg config
+
+	mu      sync.Mutex
+	stopped bool
+}
+
+func newHeartbeatSender(cfg config) *heartbeatSender { return &heartbeatSender{cfg: cfg} }
+
+func (h *heartbeatSender) send(state string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stopped {
+		return
+	}
+	if state == "going-down" {
+		h.stopped = true
+	}
+	heartbeat(h.cfg, state)
+}
+
+// heartbeatLoop sends an immediate "ok" then one every interval, until done
+// is closed. Stopping the ticker on done keeps the loop from scheduling any
+// *future* "ok" ticks once shutdown begins; the heartbeatSender's mutex+
+// stopped guard (not this alone — a tick already selected concurrently with
+// done closing is a real race Go's select doesn't resolve in our favor) is
+// what actually guarantees going-down is last.
+func heartbeatLoop(h *heartbeatSender, interval time.Duration, done <-chan struct{}) {
+	h.send("ok")
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			h.send("ok")
+		case <-done:
+			return
+		}
 	}
 }
 
@@ -197,7 +258,9 @@ func serve(cfg config, sig <-chan os.Signal) error {
 		log.Printf("WARNING: listen=%s is not loopback-only; anyone who can reach this port and obtain the bearer secret can inject notifications", cfg.Listen)
 	}
 
-	go heartbeatLoop(cfg)
+	h := newHeartbeatSender(cfg)
+	done := make(chan struct{})
+	go heartbeatLoop(h, 60*time.Second, done)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /", func(w http.ResponseWriter, r *http.Request) { handleWebhook(cfg, w, r) })
@@ -205,6 +268,12 @@ func serve(cfg config, sig <-chan os.Signal) error {
 
 	go func() {
 		<-sig
+		// Stop scheduling future "ok" ticks before sending going-down. This
+		// alone doesn't guarantee ordering (a tick already racing done in
+		// heartbeatLoop's select could still fire "ok" after this point) —
+		// h.send's mutex+stopped guard is what actually makes going-down
+		// provably last; see heartbeatSender's doc comment.
+		close(done)
 		// Bounded by httpClient's 5s timeout (see its comment above) — this
 		// can never hang shutdown indefinitely, even against an unreachable
 		// or hung relay. A second SIGTERM/SIGINT arriving while this is in
@@ -212,7 +281,7 @@ func serve(cfg config, sig <-chan os.Signal) error {
 		// dropped by the runtime if that slot is already full: os/signal
 		// never blocks the sender, and this goroutine only ever reads `sig`
 		// once, so there is no deadlock risk from a repeated signal.
-		heartbeat(cfg, "going-down")
+		h.send("going-down")
 		srv.Close()
 	}()
 

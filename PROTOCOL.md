@@ -89,20 +89,27 @@ enrolled token's `apnsEnv`.
 
 Payload shapes (userInfo keys beside `aps`):
 
-- **Sealed event** (from `/v1/push`):
+- **Sealed event** (from `/v1/push`), shown here at `level:"active"` or
+  `"time-sensitive"`:
   ```json
-  {"aps":{"alert":{"title":"Flotilla","body":"New server event"},"mutable-content":1,"sound":"default","interruption-level":"<level>"},"pairingID":"…","sealed":"…"}
+  {"aps":{"alert":{"title":"Flotilla","body":"New server event"},"mutable-content":1,"interruption-level":"<level>","sound":"default"},"pairingID":"…","sealed":"…"}
   ```
-  The visible `alert.title`/`alert.body` here are an inert placeholder — the
-  real subject/description only exist inside `sealed`, which the relay never
-  decrypts.
-- **PVE direct** (from `/v1/pve/<pairingID>`): same `aps` shape but
-  `alert:{title:<title>,body:<message>}`, plus `"pairingID","kind":"pve"`.
+  `sound` is present **only** when `level` is `active` or `time-sensitive` —
+  for `level:"passive"` the relay omits `sound` entirely (see `aps()` in
+  `flotilla-relay/src/pairing-do.js`: `if (level !== "passive") aps.sound =
+  "default"`). `interruption-level` is always set to `level`, `passive`
+  included. The visible `alert.title`/`alert.body` here are an inert
+  placeholder — the real subject/description only exist inside `sealed`,
+  which the relay never decrypts.
+- **PVE direct** (from `/v1/pve/<pairingID>`): same `aps` shape (including the
+  passive-omits-`sound` rule above) but `alert:{title:<title>,body:<message>}`,
+  plus `"pairingID","kind":"pve"`.
 - **Relay-generated** (dead-man switch / cap notices, no client involved):
   `alert:{title:"Server unreachable",body:"The server or its connection is down."}`
   (or `"Server back online"` / `"Notification cap reached"`), plus
   `"pairingID","kind":"unreachable"|"recovered"|"cap"`; level
-  `time-sensitive` for `unreachable`, `active` otherwise.
+  `time-sensitive` for `unreachable`, `active` otherwise — both non-passive,
+  so both always carry `sound:"default"` per the rule above.
 
 ## NSE (Notification Service Extension) behavior
 
@@ -143,5 +150,17 @@ looked up from the app-group shared defaults dictionary `lab.push.names`
   `state:"going-down"` on SIGTERM/SIGINT before shutting its listener down.
   Conf file `/etc/flotilla-beacon.conf` (mode 600): lines `relay=`,
   `pairing=`, `secret=`, `key=`, `listen=`.
+- `beacon/beacon-install.sh` — installs `cmd/flotilla-beacon` as a systemd
+  service on a Proxmox host. **Canonical invocation** (this is exactly what
+  the iOS app must render for the user to paste):
+  ```
+  curl -fsSL <relay>/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
+  ```
+  `<s>` (`S`) and `<k>` (`K`) are the pairing's base64url secret/key from
+  above, passed via the `FLOTILLA_SECRET`/`FLOTILLA_KEY` env vars — never as
+  positional args. Positional args land in `/proc/<pid>/cmdline`, which is
+  world-readable, and in shell history; env vars land in
+  `/proc/<pid>/environ`, which only root can read. Only `<relay>` and
+  `<pairingID>` (both non-secret) are positional.
 - `plugin/src/scripts/{send-event.sh,heartbeat.sh}` — the Unraid equivalent
   sender, invoked by Unraid's own `notify` agent and a cron job respectively.
