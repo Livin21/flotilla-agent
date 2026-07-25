@@ -1,0 +1,42 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "flotilla-agent">
+<!ENTITY author    "Livin Mathew">
+<!ENTITY version   "2026.07.26">
+<!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
+]>
+<PLUGIN name="&name;" author="&author;" version="&version;" min="7.0.0"
+        support="https://livinmathew.com/flotilla/push">
+<CHANGES>Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.</CHANGES>
+<FILE Run="/bin/bash" Method="install">
+<INLINE>
+mkdir -p &plgPath;
+tar -xJf &plgPath;/flotilla-agent-&version;.txz -C /usr/local/emhttp/plugins/
+# notify agent shim on the flash (bash'd by notify; logic stays in emhttp so updates never touch this file)
+cat &gt; /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh &lt;&lt;'EOF'
+#!/bin/bash
+exec bash /usr/local/emhttp/plugins/flotilla-agent/scripts/agent.sh
+EOF
+# heartbeat cron
+echo "* * * * * bash &emhttp;/scripts/heartbeat.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-agent.cron
+update_cron
+# array event hooks
+mkdir -p /usr/local/emhttp/webGui/event/array_started /usr/local/emhttp/webGui/event/stopping_array
+cp &emhttp;/scripts/event-array-started.sh  /usr/local/emhttp/webGui/event/array_started/flotilla-agent
+cp &emhttp;/scripts/event-stopping-array.sh /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+chmod +x /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+echo "flotilla-agent &version; installed"
+</INLINE>
+</FILE>
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+rm -f /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
+rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+rm -f &plgPath;/flotilla-agent.cron
+update_cron
+rm -rf &emhttp;
+echo "flotilla-agent removed (pairing config kept on flash; delete &plgPath; to purge)"
+</INLINE>
+</FILE>
+</PLUGIN>
