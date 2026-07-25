@@ -26,9 +26,9 @@ case "${LEVEL_MIN:-warning}" in alert) MIN=2;; warning) MIN=1;; *) MIN=0;; esac
 CLASSIFY="$EV $SUBJ"
 shopt -s nocasematch
 case "$CLASSIFY" in
-  *temperature*|*smart*|*utilization*|*hot*) [ "${CAT_DISKS:-yes}" = "yes" ] || exit 0;;
-  *array*|*parity*|*pool*)                   [ "${CAT_ARRAY:-yes}" = "yes" ] || exit 0;;
-  *)                                          [ "${CAT_OTHER:-yes}" = "yes" ] || exit 0;;
+  *temperature*|*smart*|*utilization*|*"is hot"*) [ "${CAT_DISKS:-yes}" = "yes" ] || exit 0;;
+  *array*|*parity*|*pool*)                        [ "${CAT_ARRAY:-yes}" = "yes" ] || exit 0;;
+  *)                                               [ "${CAT_OTHER:-yes}" = "yes" ] || exit 0;;
 esac
 shopt -u nocasematch
 

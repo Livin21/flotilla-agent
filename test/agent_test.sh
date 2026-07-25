@@ -83,6 +83,95 @@ N=$(wc -l < "$CAP"); run "Unraid Disk 1 message" "Warning [TOWER] - Disk 1 is ho
 t [ "$(wc -l < "$CAP")" -gt "$N" ]
 sed -i.bak 's/CAT_OTHER="no"/CAT_OTHER="yes"/' "$CFG"
 
+# I7 extended: all 8 real Unraid notification cases, validating both disk and non-disk classification
+# Uses real EVENT/SUBJECT pairs captured from live Unraid 7.3.2 box.
+
+NAME="case 1: disk temp alert (EVENT=temperature, SUBJECT=is hot) — classified as disk, gated by CAT_DISKS=yes"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 temperature" "Warning [Tower] - Disk 1 is hot (46 C)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 1b: disk temp alert blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 temperature" "Warning [Tower] - Disk 1 is hot (46 C)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 2: disk temp recovery (EVENT=message, SUBJECT=temperature) — classified as disk by SUBJECT keyword"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 message" "Notice [Tower] - Disk 1 returned to normal temperature" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 2b: disk temp recovery blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 message" "Notice [Tower] - Disk 1 returned to normal temperature" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 3: disk SMART alert (EVENT=SMART health, SUBJECT carries keyword) — classified as disk"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 SMART health [5]" "Warning [Tower] - Reallocated sector count is 8" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 3b: disk SMART alert blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 SMART health [5]" "Warning [Tower] - Reallocated sector count is 8" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 4: disk SMART recovery (EVENT=SMART message, SUBJECT generic) — classified as disk by EVENT keyword"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 SMART message [5]" "Notice [Tower] - Reallocated sector count returned to normal value" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 4b: disk SMART recovery blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 SMART message [5]" "Notice [Tower] - Reallocated sector count returned to normal value" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 5: disk utilization alert (EVENT=disk utilization, SUBJECT carries keyword) — classified as disk"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 disk utilization" "Warning [Tower] - Disk 1 is low on space (91%)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 5b: disk utilization alert blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 disk utilization" "Warning [Tower] - Disk 1 is low on space (91%)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 6: disk utilization recovery (EVENT=message, SUBJECT=utilization) — classified as disk by SUBJECT keyword"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 message" "Notice [Tower] - Disk 1 returned to normal utilization" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 6b: disk utilization recovery blocked by CAT_DISKS=no"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Unraid Disk 1 message" "Notice [Tower] - Disk 1 returned to normal utilization" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 7: unrelated Server Health event — NOT classified as disk, goes to CAT_OTHER"
+N=$(wc -l < "$CAP"); run "Server Health" "Tower: 1 health issue(s)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 7b: Server Health blocked by CAT_OTHER=no"
+sed -i.bak 's/CAT_OTHER="yes"/CAT_OTHER="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Server Health" "Tower: 1 health issue(s)" "" "alert"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_OTHER="no"/CAT_OTHER="yes"/' "$CFG"
+
+NAME="case 8: unrelated photo event (contains 'photos' substring) — NOT classified as disk, goes to CAT_OTHER (BUG FIX: *hot* would have matched inside 'photos')"
+N=$(wc -l < "$CAP"); run "Docker" "Tower: immich photos backup finished" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+
+NAME="case 8b: photo event NOT gated by CAT_DISKS=no (proves it's in CAT_OTHER, not CAT_DISKS)"
+sed -i.bak 's/CAT_DISKS="yes"/CAT_DISKS="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Docker" "Tower: immich photos backup finished" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -gt "$N" ]
+sed -i.bak 's/CAT_DISKS="no"/CAT_DISKS="yes"/' "$CFG"
+
+NAME="case 8c: photo event blocked by CAT_OTHER=no (proves it lands in CAT_OTHER)"
+sed -i.bak 's/CAT_OTHER="yes"/CAT_OTHER="no"/' "$CFG"
+N=$(wc -l < "$CAP"); run "Docker" "Tower: immich photos backup finished" "" "warning"; sleep 0.3
+t [ "$(wc -l < "$CAP")" -eq "$N" ]
+sed -i.bak 's/CAT_OTHER="no"/CAT_OTHER="yes"/' "$CFG"
+
 NAME="heartbeat posts ok state"
 FLOTILLA_CFG="$CFG" FLOTILLA_QUEUE="$QDEFAULT" bash plugin/src/scripts/heartbeat.sh; sleep 0.3
 t [ "$(tail -1 "$CAP" | jq -r '.path')" = "/v1/heartbeat" ]
