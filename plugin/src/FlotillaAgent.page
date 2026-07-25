@@ -11,6 +11,11 @@ $errList = isset($_GET['err']) ? explode(',', $_GET['err']) : [];
 // it does -- only ever runs against a real pairing). flotilla_min_agent_notice() itself
 // already fails closed to null on any missing/malformed input, never fatals.
 $minAgentNotice = $paired ? flotilla_min_agent_notice(FLOTILLA_AGENT_VERSION) : null;
+// I6: only meaningful once paired -- shows whether Unraid's own [notify] entity bits (which
+// Unraid's own Settings → Notifications page can silently clear) still let Flotilla's notify
+// shim run at all. null (dynamix.cfg unreadable/unparsable) shows nothing rather than a
+// false alarm.
+$entitiesOk = $paired ? flotilla_entities_ok() : null;
 ?>
 <script src="/plugins/flotilla-agent/js/qrcode.min.js"></script>
 <div style="max-width:640px">
@@ -24,6 +29,10 @@ $minAgentNotice = $paired ? flotilla_min_agent_notice(FLOTILLA_AGENT_VERSION) : 
 <p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
 <?php if ($minAgentNotice !== null): ?>
 <p style="color:orange"><b>Update needed:</b> the relay requires agent ≥ <?= htmlspecialchars($minAgentNotice) ?> — this install is <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?>. Update the plugin from Community Applications.</p>
+<?php endif; ?>
+<?php if ($entitiesOk !== null): ?>
+<p>Unraid will deliver warnings/alerts to Flotilla: <b style="color:<?= $entitiesOk ? 'lightgreen' : 'red' ?>"><?= $entitiesOk ? 'yes' : 'no' ?></b>
+<?php if (!$entitiesOk): ?> — Unraid's own notification settings turned this off. <form method="post" style="display:inline"><input type="hidden" name="action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
 <?php endif; ?>
 <div id="qr"></div>
 <script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>

@@ -13,6 +13,11 @@
 <INLINE>
 mkdir -p &plgPath;
 tar -xJf &plgPath;/flotilla-agent-&version;.txz -C /usr/local/emhttp/plugins/
+# I6: assert the [notify] agents bit at install time too (not just first pair/save) -- an
+# update/reinstall must not depend on the user re-pairing to restore it if Unraid's own
+# notification settings cleared it since. Best-effort and silent: flotilla_reassert_entities()
+# already no-ops cleanly when dynamix.cfg doesn't exist yet (fresh install, nothing paired).
+php -r "require '&emhttp;/include/settings.php'; flotilla_reassert_entities();" 2>/dev/null
 # notify agent shim on the flash (bash'd by notify; logic stays in emhttp so updates never touch this file)
 cat &gt; /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh &lt;&lt;'EOF'
 #!/bin/bash
@@ -32,6 +37,12 @@ echo "flotilla-agent &version; installed"
 </FILE>
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
+# Best-effort revoke BEFORE removing files below -- otherwise the relay never learns this
+# pairing is gone, its device tokens stay registered, and the dead-man switch eventually fires
+# one spurious "Server unreachable" push after the plugin (and the heartbeat that would have
+# kept it silent) is already gone. Same discipline revoke.sh always follows itself: 5s
+# timeout, silent on failure, never blocks removal either way.
+bash &emhttp;/scripts/revoke.sh 2>/dev/null
 rm -f /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
 rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
 rm -f &plgPath;/flotilla-agent.cron

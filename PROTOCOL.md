@@ -132,9 +132,17 @@ If `sealed` is present: decrypt with keychain item `push.k.<pairingID>`
 malformed plaintext), leave the placeholder alert untouched — never show raw
 ciphertext or an error to the user.
 
-If `kind` is present (no `sealed`): prefix the title with the server name
-looked up from the app-group shared defaults dictionary `lab.push.names`
-(keyed by `pairingID`), e.g. `"Tower unreachable"`.
+If `kind` is present (no `sealed`): for `kind:"unreachable"`/`"recovered"`,
+prefix the payload's fixed title with the server name looked up from the
+app-group shared defaults dictionary `lab.push.names` (keyed by `pairingID`),
+e.g. `"Tower unreachable"` / `"Tower back online"` (falling back to the
+generic `"Server unreachable"`/`"Server back online"` when the name isn't
+known). For `kind:"cap"` and the PVE direct path (any other `kind`), the
+payload's own `alert.title`/`alert.body` are shown as-is — a server-supplied
+PVE event title, or the fixed "Notification cap reached" text, would read
+oddly with a server name prefixed onto it — and the server name is instead
+added as the notification's `subtitle` (only when known; omitted otherwise)
+rather than prefixed into the title.
 
 ## Dead-man switch & rate caps (relay-side, for context)
 

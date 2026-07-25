@@ -8,6 +8,14 @@ define('FLOTILLA_AGENT_VERSION', '2026.07.26');
 
 function flotilla_b64url($bytes) { return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '='); }
 
+// I6: honors a FLOTILLA_DYNAMIX_CFG env override purely for testability (mirrors
+// flotilla_var_ini_path()/flotilla_headers_path()'s pattern) -- production always falls back
+// to the real, hardcoded Unraid path when the env var is unset.
+function flotilla_dynamix_cfg_path() {
+  $override = getenv('FLOTILLA_DYNAMIX_CFG');
+  return $override !== false ? $override : DYNAMIX_CFG;
+}
+
 /*
  * CSRF protection (C1). Unraid stamps a per-session token into /var/local/emhttp/var.ini
  * (key "csrf_token") and its own pages echo it back as a hidden form field; we do the same
@@ -117,6 +125,46 @@ function flotilla_fix_entities($text) {
 }
 
 /*
+ * I6: flotilla_fix_entities() only ever ran once, from flotilla_pair() below -- but Unraid's
+ * own Settings → Notifications page rewrites dynamix.cfg wholesale on save and clears bit 4
+ * (the "run custom notification agents" bit) on normal/warning/alert, with zero indication to
+ * the user that push silently died. These two functions are the fix: flotilla_entities_ok()
+ * is the read-only check the settings page uses to show current state (null = unknown/can't
+ * tell, fail open to "don't nag" rather than false-alarm); flotilla_reassert_entities() is the
+ * idempotent, best-effort repair, now called from THREE places instead of only ever the first
+ * pair -- flotilla_pair() (below), the 'save' action, and the plugin's install hook (.plg) --
+ * plus a one-click "Repair" button on the settings page wired to a new 'repair_entities'
+ * action, so a user who visited Unraid's own notification settings can fix it without having
+ * to re-pair.
+ */
+function flotilla_entities_ok() {
+  $path = flotilla_dynamix_cfg_path();
+  if (!is_readable($path)) return null;
+  $text = file_get_contents($path);
+  if ($text === false) return null;
+  $start = strpos($text, "[notify]");
+  if ($start === false) return null;
+  $bodyStart = $start + strlen("[notify]");
+  $nextHeader = strpos($text, "\n[", $bodyStart);
+  $body = substr($text, $bodyStart, ($nextHeader === false ? strlen($text) : $nextHeader) - $bodyStart);
+  if (!preg_match_all('/^(normal|warning|alert)="(\d+)"$/m', $body, $rows, PREG_SET_ORDER)) return null;
+  $seen = [];
+  foreach ($rows as $row) $seen[$row[1]] = (((int)$row[2]) & 4) === 4;
+  foreach (['normal', 'warning', 'alert'] as $k) {
+    if (($seen[$k] ?? false) !== true) return false;
+  }
+  return true;
+}
+
+function flotilla_reassert_entities() {
+  $path = flotilla_dynamix_cfg_path();
+  if (!is_readable($path) || !is_writable($path)) return;
+  $text = file_get_contents($path);
+  if ($text === false) return;
+  file_put_contents($path, flotilla_fix_entities($text));
+}
+
+/*
  * Task 13: "Reset pairing" (the 'reset' action below) reuses this same function as the
  * initial 'pair' action, so this is the one place that can revoke the OLD pairing at the
  * relay before its values are overwritten -- while its secret is still known. A brand new
@@ -134,10 +182,7 @@ function flotilla_pair($cfg) {
   $cfg['SECRET'] = flotilla_b64url(random_bytes(32));
   $cfg['KEY'] = flotilla_b64url(random_bytes(32));
   flotilla_write_cfg($cfg);
-  if (is_readable(DYNAMIX_CFG) && is_writable(DYNAMIX_CFG)) {
-    $dtext = file_get_contents(DYNAMIX_CFG);
-    if ($dtext !== false) file_put_contents(DYNAMIX_CFG, flotilla_fix_entities($dtext));
-  }
+  flotilla_reassert_entities();
   // ensure the notify shim exists (also done by .plg install)
   $shim = '/boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh';
   if (!file_exists($shim))
@@ -254,7 +299,17 @@ if (php_sapi_name() !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') 
       if (isset($_POST['LEVEL_MIN']) && !flotilla_valid_level_min($_POST['LEVEL_MIN'])) $errs[] = 'level';
       if (isset($_POST['RELAY']) && !flotilla_valid_relay($_POST['RELAY'])) $errs[] = 'relay';
       $cfg = flotilla_apply_save($cfg, $_POST);
-      flotilla_write_cfg($cfg); break;
+      flotilla_write_cfg($cfg);
+      // I6: re-assert on every save, not just the first pair -- Unraid's own notification
+      // settings page can clear bit 4 at any time, and 'save' is the action a paired user is
+      // most likely to hit next.
+      flotilla_reassert_entities();
+      break;
+    case 'repair_entities':
+      // I6: one-click repair for the "Unraid will deliver ... to Flotilla: no" state shown
+      // on the settings page below.
+      flotilla_reassert_entities();
+      break;
     case 'test':
       exec('/usr/local/emhttp/webGui/scripts/notify -e "Flotilla Agent" -s "Test notification" '
          . '-d "If this reached your phone, Flotilla Push works." -i "warning" 2>/dev/null');

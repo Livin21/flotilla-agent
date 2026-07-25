@@ -23,6 +23,9 @@
 set -euo pipefail
 [ $# -eq 2 ] || {
   echo "usage: FLOTILLA_SECRET=<secret-b64url> FLOTILLA_KEY=<key-b64url> $0 <relay> <pairing>"
+  echo "  optional: FLOTILLA_BEACON_BIN=<path-to-local-binary> installs that binary instead of"
+  echo "  downloading a GitHub release, and copies ./flotilla-beacon.service instead of fetching"
+  echo "  it from raw.githubusercontent.com -- for testing before a release is published."
   exit 1
 }
 

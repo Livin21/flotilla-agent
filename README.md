@@ -80,6 +80,17 @@ and points Proxmox's notification webhook target at it. Re-running the
 install command is safe (it rewrites config/binary/unit and restarts the
 service) — useful after a re-pair.
 
+The binary is normally downloaded from this repo's GitHub releases (and the
+systemd unit from `raw.githubusercontent.com`), which requires a published
+release. For testing against an unpublished build — e.g. before this repo has
+ever cut a release — set `FLOTILLA_BEACON_BIN=/path/to/a/locally-built
+flotilla-beacon` (a binary you built yourself, e.g. via `GOOS=linux go build
+-o flotilla-beacon ./cmd/flotilla-beacon`): the script installs that file
+directly instead of downloading one, and copies the `flotilla-beacon.service`
+unit sitting next to `beacon-install.sh` on disk instead of fetching it from
+GitHub. Everything else about the install (config file, systemd enable/restart)
+is unchanged.
+
 ### `flotilla-seal` (standalone)
 
 ```bash

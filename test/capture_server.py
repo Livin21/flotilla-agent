@@ -3,16 +3,22 @@
 Sends X-Min-Agent on every response, mirroring flotilla-relay's index.js withHeaders(), so
 heartbeat.sh's header-capture (Task 13 §8) has something real to capture in tests. Handles both
 POST (send-event.sh/heartbeat.sh) and DELETE (revoke.sh's DELETE /v1/pairing, Task 13) so tests
-can assert on the method/path/auth/body of any of them."""
+can assert on the method/path/auth/body of any of them.
+
+argv[3] (optional, default 202): the HTTP status to answer every request with -- I9's
+"a 4xx relay response is never queued" test points send-event.sh at a second instance of this
+server started with argv[3]=401, so that assertion is against a real rejected response rather
+than a synthetic/hardcoded queue-file check."""
 import http.server, json, sys
 out = open(sys.argv[2], "a")
+STATUS = int(sys.argv[3]) if len(sys.argv) > 3 else 202
 class H(http.server.BaseHTTPRequestHandler):
     def _capture(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         out.write(json.dumps({"method": self.command, "path": self.path,
                               "auth": self.headers.get("Authorization", ""),
                               "body": body.decode()}) + "\n"); out.flush()
-        self.send_response(202)
+        self.send_response(STATUS)
         self.send_header("X-Min-Agent", "1.0.0")
         self.end_headers(); self.wfile.write(b'{"ok":true}')
     def do_POST(self): self._capture()

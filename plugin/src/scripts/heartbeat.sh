@@ -26,4 +26,34 @@ DUMP_ARGS=()
 jq -cn --arg p "$PAIRING_ID" --arg s "${STATE:-ok}" '{pairingID:$p,state:$s}' | \
   curl -s -m "$TIMEOUT" "${DUMP_ARGS[@]}" -X POST -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
        -d @- "$RELAY/v1/heartbeat" >/dev/null 2>&1
+
+# I9: drain send-event.sh's on-disk retry queue (bounded to 10 entries there). Best-effort,
+# oldest first; stops at the first non-2xx response rather than burning this cron minute
+# retrying every remaining entry against a relay that's almost certainly still down for all of
+# them -- whatever's left just waits for the next heartbeat tick. Never blocks the heartbeat
+# send above (runs after it, and the whole drain is itself best-effort/silent) and never
+# grows or retries unbounded: queuing itself is what caps this at 10 (send-event.sh), and a
+# permanently-undeliverable entry is eventually evicted there by newer failures.
+QUEUE="${FLOTILLA_QUEUE:-/var/local/flotilla-agent.queue}"
+if [ -s "$QUEUE" ] 2>/dev/null; then
+  PENDING=()
+  FAILED=0
+  while IFS= read -r LINE || [ -n "$LINE" ]; do
+    [ -n "$LINE" ] || continue
+    if [ "$FAILED" -eq 1 ]; then PENDING+=("$LINE"); continue; fi
+    CODE=$(curl -s -m 3 -o /dev/null -w '%{http_code}' -X POST \
+      -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+      -d "$LINE" "$RELAY/v1/push" 2>/dev/null)
+    case "$CODE" in
+      2??) ;; # delivered -- drop it from the queue
+      *) FAILED=1; PENDING+=("$LINE");;
+    esac
+  done < "$QUEUE"
+  if [ "${#PENDING[@]}" -eq 0 ]; then
+    rm -f "$QUEUE" 2>/dev/null
+  elif [ -w "$(dirname "$QUEUE")" ]; then
+    printf '%s\n' "${PENDING[@]}" > "$QUEUE.tmp.$$" 2>/dev/null && mv -f "$QUEUE.tmp.$$" "$QUEUE" 2>/dev/null
+    rm -f "$QUEUE.tmp.$$" 2>/dev/null
+  fi
+fi
 exit 0
