@@ -3,20 +3,26 @@ Title="Flotilla Agent"
 Icon="bell"
 ---
 <?php require '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
-$cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== ''; ?>
+$cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== '';
+$csrf = flotilla_csrf_token();
+$csrfField = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf !== false ? $csrf : '') . '">';
+$errList = isset($_GET['err']) ? explode(',', $_GET['err']) : [];
+?>
 <script src="/plugins/flotilla-agent/js/qrcode.min.js"></script>
 <div style="max-width:640px">
 <h3>Flotilla Push</h3>
+<?php if (in_array('relay', $errList, true)): ?><p style="color:red">Relay URL was invalid — kept the previous value.</p><?php endif; ?>
+<?php if (in_array('level', $errList, true)): ?><p style="color:red">Minimum importance value was invalid — kept the previous value.</p><?php endif; ?>
 <?php if (!$paired): ?>
 <p>Pair this server with the Flotilla iOS app. Pairing generates an end-to-end encryption key that never leaves your network except inside the QR code below.</p>
-<form method="post"><input type="hidden" name="action" value="pair"><button type="submit">Pair with Flotilla…</button></form>
+<form method="post"><input type="hidden" name="action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
 <?php else: ?>
 <p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
 <div id="qr"></div>
 <script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>
 <p>Manual code:</p><textarea readonly rows="3" style="width:100%"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>
-<form method="post" style="margin-top:12px"><input type="hidden" name="action" value="test"><button type="submit">Send test notification</button></form>
-<form method="post"><input type="hidden" name="action" value="save">
+<form method="post" style="margin-top:12px"><input type="hidden" name="action" value="test"><?= $csrfField ?><button type="submit">Send test notification</button></form>
+<form method="post"><input type="hidden" name="action" value="save"><?= $csrfField ?>
   <h4>Filters</h4>
   <label>Minimum importance:
   <select name="LEVEL_MIN">
@@ -33,6 +39,6 @@ $cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== ''; ?>
   <button type="submit">Save</button>
 </form>
 <form method="post" onsubmit="return confirm('Reset pairing? All paired devices stop receiving pushes until they re-scan.')">
-  <input type="hidden" name="action" value="reset"><button type="submit" style="color:red">Reset pairing</button></form>
+  <input type="hidden" name="action" value="reset"><?= $csrfField ?><button type="submit" style="color:red">Reset pairing</button></form>
 <?php endif; ?>
 </div>

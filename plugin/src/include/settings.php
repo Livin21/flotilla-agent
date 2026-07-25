@@ -5,6 +5,42 @@ define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
 
 function flotilla_b64url($bytes) { return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '='); }
 
+/*
+ * CSRF protection (C1). Unraid stamps a per-session token into /var/local/emhttp/var.ini
+ * (key "csrf_token") and its own pages echo it back as a hidden form field; we do the same
+ * so a forged cross-site POST (no way to read the victim's session token) can't silently
+ * repoint RELAY -- which would otherwise hand Task 6's next heartbeat's
+ * "Authorization: Bearer $SECRET" + PAIRING_ID straight to an attacker's server.
+ *
+ * flotilla_var_ini_path() honors a FLOTILLA_VAR_INI env override purely for testability
+ * (mirrors the FLOTILLA_CFG override Task 6's bash scripts already use); production always
+ * falls back to the real, hardcoded Unraid path when the env var is unset.
+ */
+function flotilla_var_ini_path() {
+  $override = getenv('FLOTILLA_VAR_INI');
+  return $override !== false ? $override : '/var/local/emhttp/var.ini';
+}
+
+// Returns the current session's csrf_token as a string, or false if it can't be read
+// (missing file, unparsable ini, or no/empty csrf_token key) -- callers must fail closed.
+function flotilla_csrf_token() {
+  $path = flotilla_var_ini_path();
+  if (!is_readable($path)) return false;
+  $ini = @parse_ini_file($path);
+  if ($ini === false || !isset($ini['csrf_token']) || $ini['csrf_token'] === '') return false;
+  return (string)$ini['csrf_token'];
+}
+
+// Constant-time comparison against the session's real token. Fails closed: if the token
+// can't be established (unreadable var.ini, missing key) or the submitted value isn't a
+// plain string, the request is rejected -- never silently accepted.
+function flotilla_csrf_check($submitted) {
+  $expected = flotilla_csrf_token();
+  if ($expected === false) return false;
+  if (!is_string($submitted)) return false;
+  return hash_equals($expected, $submitted);
+}
+
 function flotilla_read_cfg() {
   $cfg = ['RELAY' => 'https://push.flotilla.livinmathew.com', 'PAIRING_ID' => '', 'SECRET' => '', 'KEY' => '',
           'LEVEL_MIN' => 'warning', 'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes', 'CAT_OTHER' => 'yes'];
@@ -22,14 +58,19 @@ function flotilla_read_cfg() {
  * backslash processing, `$` (parameter/command substitution) and backtick (command
  * substitution) inside double quotes, so an unescaped POST-derived value (RELAY and
  * LEVEL_MIN both come straight from $_POST in the 'save' handler below) could otherwise
- * inject arbitrary shell commands that execute the next time the cfg is sourced. Newlines
- * are stripped outright since a raw newline starts a new, attacker-controlled statement
- * rather than merely breaking out of the quoted string. Ordinary values (URLs, uuids,
- * base64url secrets, "yes"/"no", "normal"/"warning"/"alert") never contain these
- * characters, so this is a no-op for every legitimate value Task 6's config contract uses.
+ * inject arbitrary shell commands that execute the next time the cfg is sourced. All
+ * control characters (0x00-0x1F, 0x7F) -- not just CR/LF -- are stripped outright: a raw
+ * NUL byte can truncate/corrupt bash's parse of the *whole* file (silently wiping
+ * subsequent keys like PAIRING_ID/SECRET/KEY -- a persistent unpairing DoS), and a raw
+ * newline starts a new, attacker-controlled statement rather than merely breaking out of
+ * the quoted string. This is defense in depth: flotilla_valid_relay()/
+ * flotilla_valid_level_min() are the primary defense and already reject these bytes at the
+ * input boundary before a value ever reaches here. Ordinary values (URLs, uuids, base64url
+ * secrets, "yes"/"no", "normal"/"warning"/"alert") never contain these characters, so this
+ * is a no-op for every legitimate value Task 6's config contract uses.
  */
 function flotilla_cfg_escape($v) {
-  $v = str_replace(["\r", "\n"], '', (string)$v);
+  $v = preg_replace('/[\x00-\x1F\x7F]/', '', (string)$v);
   return str_replace(['\\', '"', '$', '`'], ['\\\\', '\\"', '\\$', '\\`'], $v);
 }
 
@@ -94,19 +135,71 @@ function flotilla_pair_url($cfg) {
        . '&n=' . rawurlencode($host !== '' ? $host : 'Unraid');
 }
 
+// I1: whitelist LEVEL_MIN to exactly the three values the config contract (and Task 6's
+// scripts' `case "${LEVEL_MIN:-warning}" in alert) ...; warning) ...; *) ...;` fallback)
+// understand. Anything else is rejected (caller keeps the previous value).
+function flotilla_valid_level_min($v) {
+  return in_array($v, ['normal', 'warning', 'alert'], true);
+}
+
+// I1: RELAY is the only free-text field in the config, so it's validated strictly at the
+// boundary rather than merely escaped: must be a well-formed absolute http/https URL, and
+// -- belt and braces against filter_var's known laxness with odd characters -- every byte
+// must come from a conservative allowlist that excludes control characters, NUL,
+// whitespace, quotes, backticks, `$`, and backslash. This is what closes the NUL-byte
+// config-corruption DoS and the backtick escape/unescape growth defect: neither byte can
+// ever reach flotilla_write_cfg via RELAY in the first place.
+function flotilla_valid_relay($v) {
+  if (!is_string($v)) return false;
+  if ($v === '' || strlen($v) > 2048) return false;
+  for ($i = 0, $len = strlen($v); $i < $len; $i++) {
+    $o = ord($v[$i]);
+    if ($o <= 0x20 || $o === 0x7F) return false;      // control chars, NUL, whitespace
+    if (strpos('\'"`$\\', $v[$i]) !== false) return false; // quotes, backtick, $, backslash
+  }
+  if (filter_var($v, FILTER_VALIDATE_URL) === false) return false;
+  $scheme = strtolower((string)parse_url($v, PHP_URL_SCHEME));
+  return $scheme === 'http' || $scheme === 'https';
+}
+
+/*
+ * Pure computation of the new config for the 'save' action -- kept separate from the POST
+ * handler so it's directly unit-testable with no file I/O.
+ *
+ * C2: CAT_DISKS/CAT_ARRAY/CAT_OTHER are keyed off isset($post[$k]) -- present means the
+ * checkbox was checked, absent means it was unchecked (unchecked HTML checkboxes are never
+ * submitted at all) -- never off the stale/previous $cfg value, or an unchecked-then-saved
+ * category could never actually be turned off.
+ *
+ * I1: LEVEL_MIN/RELAY are only applied when present AND valid; invalid input silently
+ * keeps the previous (already-known-good) value instead of being stored verbatim.
+ */
+function flotilla_apply_save(array $cfg, array $post) {
+  if (isset($post['LEVEL_MIN']) && flotilla_valid_level_min($post['LEVEL_MIN'])) $cfg['LEVEL_MIN'] = $post['LEVEL_MIN'];
+  if (isset($post['RELAY']) && flotilla_valid_relay($post['RELAY'])) $cfg['RELAY'] = $post['RELAY'];
+  foreach (['CAT_DISKS', 'CAT_ARRAY', 'CAT_OTHER'] as $k) $cfg[$k] = isset($post[$k]) ? 'yes' : 'no';
+  return $cfg;
+}
+
 if (php_sapi_name() !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+  // C1: reject any POST whose csrf_token doesn't match this session's real token. No state
+  // change on mismatch -- just redirect, same as every other unhandled action.
+  if (!flotilla_csrf_check($_POST['csrf_token'] ?? null)) { header('Location: /Settings/FlotillaAgent'); exit; }
+
   $cfg = flotilla_read_cfg();
+  $errs = [];
   switch ($_POST['action'] ?? '') {
     case 'pair': case 'reset': $cfg = flotilla_pair($cfg); break;
     case 'save':
-      foreach (['LEVEL_MIN', 'CAT_DISKS', 'CAT_ARRAY', 'CAT_OTHER', 'RELAY'] as $k)
-        if (isset($_POST[$k])) $cfg[$k] = $_POST[$k];
-      foreach (['CAT_DISKS', 'CAT_ARRAY', 'CAT_OTHER'] as $k) $cfg[$k] = ($cfg[$k] === 'yes') ? 'yes' : 'no';
+      if (isset($_POST['LEVEL_MIN']) && !flotilla_valid_level_min($_POST['LEVEL_MIN'])) $errs[] = 'level';
+      if (isset($_POST['RELAY']) && !flotilla_valid_relay($_POST['RELAY'])) $errs[] = 'relay';
+      $cfg = flotilla_apply_save($cfg, $_POST);
       flotilla_write_cfg($cfg); break;
     case 'test':
       exec('/usr/local/emhttp/webGui/scripts/notify -e "Flotilla Agent" -s "Test notification" '
          . '-d "If this reached your phone, Flotilla Push works." -i "warning" 2>/dev/null');
       break;
   }
-  header('Location: /Settings/FlotillaAgent'); exit;
+  header('Location: /Settings/FlotillaAgent' . ($errs ? ('?err=' . implode(',', $errs)) : ''));
+  exit;
 }
