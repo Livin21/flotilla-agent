@@ -3,6 +3,14 @@ Title="Flotilla Agent"
 Icon="bell"
 ---
 <?php require '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
+// I10: self-heal the heartbeat cron entry on every page load, paired or not -- this is the
+// earliest point after a fresh install a user is guaranteed to reach (it's literally where
+// pairing happens), well before the next reboot or another plugin's install would otherwise
+// trigger Unraid's update_cron and pick up the entry the .plg's own install-time call missed
+// (see flotilla_reassert_cron()'s doc comment in settings.php for the registration-ordering
+// reason). Silent, idempotent, and cheap: a no-op once the entry's already registered.
+flotilla_reassert_cron();
+$cronOk = flotilla_cron_ok();
 $cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== '';
 $csrf = flotilla_csrf_token();
 $csrfField = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf !== false ? $csrf : '') . '">';
@@ -33,6 +41,10 @@ $entitiesOk = $paired ? flotilla_entities_ok() : null;
 <?php if ($entitiesOk !== null): ?>
 <p>Unraid will deliver warnings/alerts to Flotilla: <b style="color:<?= $entitiesOk ? 'lightgreen' : 'red' ?>"><?= $entitiesOk ? 'yes' : 'no' ?></b>
 <?php if (!$entitiesOk): ?> — Unraid's own notification settings turned this off. <form method="post" style="display:inline"><input type="hidden" name="action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
+<?php endif; ?>
+<?php if ($cronOk !== null): ?>
+<p>Heartbeat scheduled: <b style="color:<?= $cronOk ? 'lightgreen' : 'red' ?>"><?= $cronOk ? 'yes' : 'no' ?></b>
+<?php if (!$cronOk): ?> — Unraid hasn't picked up the heartbeat cron entry yet. <form method="post" style="display:inline"><input type="hidden" name="action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
 <?php endif; ?>
 <div id="qr"></div>
 <script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>

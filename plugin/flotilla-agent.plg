@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "flotilla-agent">
 <!ENTITY author    "Livin Mathew">
-<!ENTITY version   "2026.07.26">
+<!ENTITY version   "2026.07.28">
 <!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
 ]>
@@ -26,12 +26,34 @@ EOF
 chmod +x /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
 # heartbeat cron
 echo "* * * * * bash &emhttp;/scripts/heartbeat.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-agent.cron
+# I10: this update_cron is provably a no-op on a fresh install -- see the belt-and-braces
+# retry at the end of this block for why -- but it's kept here too since on an update/reinstall
+# our /var/log/plugins/&name;.plg registration may already exist from the prior install, in
+# which case this one actually works immediately and there's no reason to wait 10s for it.
 update_cron
 # array event hooks
 mkdir -p /usr/local/emhttp/webGui/event/array_started /usr/local/emhttp/webGui/event/stopping_array
 cp &emhttp;/scripts/event-array-started.sh  /usr/local/emhttp/webGui/event/array_started/flotilla-agent
 cp &emhttp;/scripts/event-stopping-array.sh /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
 chmod +x /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+# I10: belt-and-braces re-run of update_cron above. Unraid's own update_cron (see
+# /usr/local/sbin/update_cron) builds /etc/cron.d/root by iterating /var/log/plugins/*.plg --
+# i.e. it only picks up a plugin's *.cron files once that plugin is registered there -- and
+# that registration symlink is created by the plugin manager AFTER this entire install FILE
+# block finishes running, not before. So on a fresh install the update_cron call above runs
+# too early and is silently a no-op: confirmed on a live Unraid 7.3.2 box, `grep flotilla
+# /etc/cron.d/root` finds nothing immediately after `plugin install`, and running update_cron
+# by hand afterward fixes it instantly. Left unfixed, the heartbeat never gets scheduled until
+# the next reboot (or until some unrelated plugin's install happens to call update_cron), so a
+# user who pairs right after installing gets a false "Server unreachable" push from the
+# relay's 180s dead-man switch -- the exact false-alarm class already fixed twice elsewhere in
+# this codebase. Do not simplify this away: it is intentionally detached (backgrounded, output
+# redirected) so a slow or hung update_cron can never block or fail the install itself, and
+# the sleep is what gives the plugin manager time to finish registering us first. This is
+# belt-and-braces alongside FlotillaAgent.page's flotilla_reassert_cron(), which self-heals
+# the same gap the moment the user opens the settings page (where pairing happens) -- this
+# fixes it even if they never do.
+( sleep 10; update_cron ) &amp;&gt; /dev/null &amp;
 echo "flotilla-agent &version; installed"
 </INLINE>
 </FILE>
@@ -45,6 +67,16 @@ echo "flotilla-agent &version; installed"
 bash &emhttp;/scripts/revoke.sh 2>/dev/null
 rm -f /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
 rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+# I10: checked whether the install-time registration-ordering trap above applies in reverse
+# here too -- it doesn't. update_cron fully regenerates /etc/cron.d/root from scratch on every
+# call (it doesn't append), reading straight from whatever *.cron files exist on disk right
+# now. Because the .cron file above is deleted BEFORE this call, the regenerated crontab omits
+# our line regardless of whether /var/log/plugins/&name;.plg has been deregistered yet at this
+# exact point -- if it's still registered, our now-empty directory just contributes nothing;
+# if it's already deregistered, our directory isn't scanned at all. Either way, no stale entry
+# lingers to run a deleted script every minute. (Contrast install: getting the entry INTO the
+# crontab requires registration to already exist, which it doesn't yet -- that's the actual
+# asymmetry, not this ordering.)
 rm -f &plgPath;/flotilla-agent.cron
 update_cron
 rm -rf &emhttp;

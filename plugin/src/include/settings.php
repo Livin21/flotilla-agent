@@ -4,7 +4,7 @@ define('FLOTILLA_CFG', '/boot/config/plugins/flotilla-agent/flotilla-agent.cfg')
 define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
 // Must track plugin/flotilla-agent.plg's <!ENTITY version> -- this is the "installed" side of
 // Task 13 §8's min-agent comparison (see flotilla_min_agent_notice() below).
-define('FLOTILLA_AGENT_VERSION', '2026.07.26');
+define('FLOTILLA_AGENT_VERSION', '2026.07.28');
 
 function flotilla_b64url($bytes) { return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '='); }
 
@@ -268,6 +268,71 @@ function flotilla_min_agent_notice($installedVersion) {
 }
 
 /*
+ * I10: the .plg's install block writes flotilla-agent.cron and calls update_cron, but Unraid's
+ * own update_cron (see /usr/local/sbin/update_cron) builds /etc/cron.d/root by iterating
+ * /var/log/plugins/*.plg and cat-ing each registered plugin's *.cron files -- and that
+ * registration symlink is created by the plugin manager AFTER the install FILE block finishes
+ * running, not before. So the install-time update_cron call is provably a no-op on a fresh
+ * install (confirmed on a live Unraid 7.3.2 box: no flotilla line in /etc/cron.d/root right
+ * after `plugin install`, fixed instantly by running update_cron by hand). Left unfixed, the
+ * heartbeat never gets scheduled until the next reboot or an unrelated plugin's install, and a
+ * user who pairs right after installing gets a false "Server unreachable" push from the
+ * relay's 180s dead-man switch.
+ *
+ * This settings page is the natural repair point -- it's where pairing happens, so a user who
+ * just installed loads it almost immediately, long before the next reboot would otherwise fix
+ * it on its own. flotilla_cron_ok() is the read-only check (mirrors flotilla_entities_ok():
+ * null = can't tell, fail safe rather than a false alarm); flotilla_reassert_cron() is the
+ * idempotent, best-effort repair -- called silently on every page load AND reachable via a
+ * one-click "Repair" button (the 'repair_cron' action below) if the silent attempt didn't
+ * stick. This is belt-and-braces alongside the .plg's own detached, delayed retry
+ * (`( sleep 10; update_cron ) &> /dev/null &` at the end of its install block), which covers
+ * the case where the user never opens this page at all.
+ */
+function flotilla_cron_file_path() {
+  $override = getenv('FLOTILLA_CRON_FILE');
+  return $override !== false ? $override : '/boot/config/plugins/flotilla-agent/flotilla-agent.cron';
+}
+
+// The live, generated system crontab that Unraid's update_cron writes -- NOT anything under
+// /boot/config/plugins. Honors FLOTILLA_CRONTAB purely for testability, same pattern as every
+// other overridable path in this file; production always falls back to the real path.
+function flotilla_crontab_path() {
+  $override = getenv('FLOTILLA_CRONTAB');
+  return $override !== false ? $override : '/etc/cron.d/root';
+}
+
+// Returns true (our heartbeat line is present in the live crontab), false (our .cron file
+// exists on the flash but the live crontab doesn't have it -- needs repair), or null (can't
+// tell: our .cron file is missing/empty/unreadable, or the live crontab is unreadable -- fails
+// safe to "don't nag" rather than risk a false alarm, mirroring flotilla_entities_ok()).
+function flotilla_cron_ok() {
+  $cronFile = flotilla_cron_file_path();
+  if (!is_readable($cronFile)) return null;
+  $want = trim((string)@file_get_contents($cronFile));
+  if ($want === '') return null;
+  $tabPath = flotilla_crontab_path();
+  if (!is_readable($tabPath)) return null;
+  $have = @file_get_contents($tabPath);
+  if (!is_string($have)) return null;
+  return strpos($have, $want) !== false;
+}
+
+// Idempotent, best-effort repair: re-run Unraid's own update_cron so the heartbeat entry
+// (silently dropped by the registration-ordering trap documented above) gets picked up without
+// waiting for a reboot or another plugin's install to trigger it incidentally. Only shells out
+// when flotilla_cron_ok() is confidently false (both files readable and the entry is
+// genuinely missing) -- a null (can't-tell) result never causes update_cron to be invoked, and
+// update_cron is never called from here more than needed. update_cron itself is an Unraid
+// system binary that doesn't exist off a real Unraid box, so this can't be exercised
+// end-to-end by this repo's test suite (see test/cron_ok_test.php's note); shell_exec's stderr
+// is discarded so a missing/failing binary can never fatal this out.
+function flotilla_reassert_cron() {
+  if (flotilla_cron_ok() !== false) return;
+  shell_exec('update_cron 2>/dev/null');
+}
+
+/*
  * Pure computation of the new config for the 'save' action -- kept separate from the POST
  * handler so it's directly unit-testable with no file I/O.
  *
@@ -309,6 +374,12 @@ if (php_sapi_name() !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') 
       // I6: one-click repair for the "Unraid will deliver ... to Flotilla: no" state shown
       // on the settings page below.
       flotilla_reassert_entities();
+      break;
+    case 'repair_cron':
+      // I10: one-click repair for the "Heartbeat scheduled: no" state shown on the settings
+      // page below, for whenever the silent on-page-load attempt in FlotillaAgent.page didn't
+      // stick (e.g. update_cron itself failed transiently).
+      flotilla_reassert_cron();
       break;
     case 'test':
       exec('/usr/local/emhttp/webGui/scripts/notify -e "Flotilla Agent" -s "Test notification" '
