@@ -3,8 +3,9 @@
 #          beacon-install.sh <relay-url> <pairing-id>
 #
 # Canonical invocation — this is exactly the form the iOS app renders for the
-# user to paste (see PROTOCOL.md):
-#   curl -fsSL <relay>/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
+# user to paste (see PROTOCOL.md). This script is fetched straight from this
+# repo's GitHub raw URL, not from the relay:
+#   curl -fsSL https://raw.githubusercontent.com/Livin21/flotilla-agent/main/beacon/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
 #
 # The bearer secret and E2E key are read from FLOTILLA_SECRET/FLOTILLA_KEY env
 # vars, never as positional args: argv is world-readable via

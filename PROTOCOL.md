@@ -24,9 +24,10 @@ QR / manual code: `flotilla://pair?v=1&id=<pairingID>&k=<b64url K>&s=<b64url S>&
 
 ## Endpoints
 
-All endpoints are under `/v1/` (except the standalone `/beacon-install.sh`
-below), all `/v1/` bodies are JSON, and all responses carry the header
-`X-Min-Agent: 1.0.0`.
+All endpoints are under `/v1/`, all bodies are JSON, and all responses carry
+the header `X-Min-Agent: 1.0.0`. The Proxmox beacon installer is not a relay
+endpoint — see "Implementations in this repo" below for where it's served
+from.
 
 Auth (every route except `health`): `Authorization: Bearer <b64url S>`. The
 relay stores only `sHashHex = hex(SHA-256(raw S bytes))` — never the secret
@@ -43,11 +44,6 @@ itself. The first valid `enroll` for a `pairingID` creates the pairing record
 | `POST /v1/heartbeat` | `{pairingID, state:"ok"\|"going-down"}` | 200 `{}` | 401 |
 | `DELETE /v1/pairing` | `{pairingID}` | 200 `{ok:true}` | 401 |
 | `GET /v1/health` | — | 200 `{ok:true,minAgent:"1.0.0"}` | — |
-| `GET /beacon-install.sh` | — (not under `/v1/`) | 200, `content-type: text/x-shellscript` | — |
-
-`GET /beacon-install.sh` is public/unauthenticated by design (no secrets in
-the script itself) — it's what makes `curl -fsSL <relay>/beacon-install.sh |
-... bash` (see the invocation below) work without a prior auth step.
 
 `DELETE /v1/pairing` (Task 13) is the server-side revoke: it wipes every key
 the pairing's relay-side state holds (auth hash, device tokens, heartbeat
@@ -177,17 +173,25 @@ rather than prefixed into the title.
   Conf file `/etc/flotilla-beacon.conf` (mode 600): lines `relay=`,
   `pairing=`, `secret=`, `key=`, `listen=`.
 - `beacon/beacon-install.sh` — installs `cmd/flotilla-beacon` as a systemd
-  service on a Proxmox host. **Canonical invocation** (this is exactly what
-  the iOS app must render for the user to paste):
+  service on a Proxmox host. Served straight from this repo's GitHub raw URL
+  (not by the relay — Cloudflare refuses to deploy any Worker whose bundle
+  contains this script), which is no extra dependency: the script already
+  downloads the beacon binary itself from this repo's GitHub releases.
+  **Canonical invocation** (this is exactly what the iOS app must render for
+  the user to paste):
   ```
-  curl -fsSL <relay>/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
+  curl -fsSL https://raw.githubusercontent.com/Livin21/flotilla-agent/main/beacon/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
   ```
   `<s>` (`S`) and `<k>` (`K`) are the pairing's base64url secret/key from
   above, passed via the `FLOTILLA_SECRET`/`FLOTILLA_KEY` env vars — never as
   positional args. Positional args land in `/proc/<pid>/cmdline`, which is
   world-readable, and in shell history; env vars land in
-  `/proc/<pid>/environ`, which only root can read. Only `<relay>` and
-  `<pairingID>` (both non-secret) are positional.
+  `/proc/<pid>/environ`, which only root can read. `<relay>` and
+  `<pairingID>` (both non-secret) are positional, and `<relay>` is still what
+  the beacon points its heartbeats/events at — only the installer script
+  itself no longer comes from the relay. This requires `flotilla-agent` to be
+  a public GitHub repo, which was already a launch requirement (both the
+  Unraid CA and Proxmox community-scripts mandate open source).
 - `plugin/src/scripts/{send-event.sh,heartbeat.sh}` — the Unraid equivalent
   sender, invoked by Unraid's own `notify` agent and a cron job respectively.
 - `plugin/src/scripts/revoke.sh` — calls `DELETE /v1/pairing`; invoked by

@@ -4,23 +4,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 FAIL=0; t() { if "$@"; then echo "ok: $NAME"; else echo "FAIL: $NAME"; FAIL=1; fi; }
 
-# B1: beacon/beacon-install.sh is this repo's source of truth for the Proxmox beacon
-# installer; flotilla-relay serves a committed copy of it at GET /beacon-install.sh
-# (src/beacon-install.sh there, see that repo's src/beacon-install.js doc comment for why a
-# relay-side byte-identical check isn't practical: its tests execute inside the Workers
-# runtime, with no filesystem access to read a sibling repo). This is the other half of that
-# drift guard: a plain byte diff, run from a normal shell with full filesystem access. Skips
-# (doesn't fail) when the sibling checkout isn't present -- e.g. a CI job that only checks out
-# this one repo -- since there's nothing to compare against in that case; it fails loudly when
-# the sibling IS present and the two copies disagree.
-NAME="flotilla-relay's beacon-install.sh copy matches this repo's source of truth (or the sibling checkout isn't present to compare)"
-RELAY_COPY="../flotilla-relay/src/beacon-install.sh"
-if [ -f "$RELAY_COPY" ]; then
-  t diff -q beacon/beacon-install.sh "$RELAY_COPY"
-else
-  echo "ok: $NAME (skipped -- $RELAY_COPY not found; sibling flotilla-relay checkout not present)"
-fi
-
 go build -o /tmp/flotilla-seal ./cmd/flotilla-seal
 K=$(/tmp/flotilla-seal keygen); S=$(/tmp/flotilla-seal keygen)
 TMP=$(mktemp -d); CAP="$TMP/cap.jsonl"

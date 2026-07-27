@@ -68,10 +68,11 @@ revokes the old pairing at the relay (see below) and generates a new one.
 ### Proxmox VE (`flotilla-beacon`)
 
 The iOS app renders the exact install command during pairing (also documented
-in [PROTOCOL.md](PROTOCOL.md)):
+in [PROTOCOL.md](PROTOCOL.md)) — the script itself is fetched straight from
+this repo's GitHub raw URL, not from the relay:
 
 ```
-curl -fsSL <relay>/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
+curl -fsSL https://raw.githubusercontent.com/Livin21/flotilla-agent/main/beacon/beacon-install.sh | FLOTILLA_SECRET=<s> FLOTILLA_KEY=<k> bash -s -- <relay> <pairingID>
 ```
 
 This installs `flotilla-beacon` as a systemd service listening on
@@ -82,7 +83,9 @@ service) — useful after a re-pair.
 
 The binary is normally downloaded from this repo's GitHub releases (and the
 systemd unit from `raw.githubusercontent.com`), which requires a published
-release. For testing against an unpublished build — e.g. before this repo has
+release and this repo to be public — already a launch requirement (the
+Unraid CA and Proxmox community-scripts both mandate open source). For
+testing against an unpublished build — e.g. before this repo has
 ever cut a release — set `FLOTILLA_BEACON_BIN=/path/to/a/locally-built
 flotilla-beacon` (a binary you built yourself, e.g. via `GOOS=linux go build
 -o flotilla-beacon ./cmd/flotilla-beacon`): the script installs that file
