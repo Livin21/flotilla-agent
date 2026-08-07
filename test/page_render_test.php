@@ -12,9 +12,16 @@
  * (loopback, LAN, .local) or the warning is noise.
  *
  * The page is rendered in a subprocess with its emhttp require rewritten to this repo's copy and
- * every overridable path pointed at a temp dir. A subprocess per render is required: the page
- * `require`s settings.php (not require_once), so two renders in one process would fatal on a
- * function redeclaration rather than on anything this test cares about.
+ * every overridable path pointed at a temp dir.
+ *
+ * DOUBLE-RENDER: Unraid evaluates a .page's content more than once per request. When the page
+ * used a bare `require` for settings.php, the second evaluation re-ran its function declarations
+ * and PHP died with "Cannot redeclare function flotilla_b64url()" -- a COMPILE-time fatal, so
+ * Unraid's evalContent.php try/catch never caught it, nothing reached console.error, and the
+ * settings page rendered EMPTY below its title on every real install. An earlier version of this
+ * file worked around that by rendering each case in its own subprocess and noted the hazard in
+ * passing; that made every CLI check pass against a page that was broken in a browser. The
+ * double-render case below is now asserted explicitly.
  */
 
 $tmp = sys_get_temp_dir() . '/flotilla_page_test_' . getmypid();
@@ -107,6 +114,31 @@ foreach (['https://flotilla-push.livinmathew.com', 'http://192.168.0.42:8787', '
   assert(strpos($html, $WARN) === false, "must not warn for $relay");
 }
 echo "page_render: https and LAN relays show no warning\n";
+
+// --- double render in ONE process, the way Unraid actually evaluates a .page ------------------
+// Regression guard for the "Cannot redeclare function" fatal that rendered the settings page
+// blank on every real install. This must run in a single process: a subprocess per render is
+// exactly what hid the bug. Failure mode is a fatal, so a non-zero exit or any "redeclare" text
+// in the output fails the test.
+write_cfg($cfgPath);
+$twice = "$tmp/twice.php";
+file_put_contents($twice,
+  "<?php \$_GET = []; ob_start(); include " . var_export($pagePhp, true) . ";" .
+  " include " . var_export($pagePhp, true) . "; \$o = ob_get_clean();" .
+  " if (stripos(\$o, 'redeclare') !== false) { fwrite(STDERR, \$o); exit(1); }" .
+  " echo 'DOUBLE-RENDER-OK';");
+$out = []; $rc = 0;
+exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($twice) . ' 2>&1', $out, $rc);
+$html = implode("\n", $out);
+assert($rc === 0, "the page must survive being evaluated twice in one process (Unraid does this), got exit $rc: $html");
+assert(strpos($html, 'DOUBLE-RENDER-OK') !== false, "second evaluation of the page died: $html");
+assert(stripos($html, 'redeclare') === false, "function redeclaration on second render: $html");
+
+// And the mechanism itself: a bare `require` of settings.php reintroduces the fatal.
+$pageSrc = file_get_contents(__DIR__ . '/../plugin/src/FlotillaAgent.page');
+assert(preg_match('/^\s*require\s+[\'"][^\'"]*settings\.php/m', $pageSrc) !== 1,
+       'FlotillaAgent.page must use require_once for settings.php, never a bare require');
+echo "page_render: the page survives Unraid's double evaluation\n";
 
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

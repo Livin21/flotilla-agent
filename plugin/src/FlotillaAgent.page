@@ -2,7 +2,17 @@ Menu="Utilities"
 Title="Flotilla Agent"
 Icon="bell"
 ---
-<?php require '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
+<?php
+// require_once, NOT require: Unraid evaluates a .page's content more than once within a single
+// request (DefaultPageLayout eval's page text, and the tabless/panel renderer walks $pages
+// again), so a plain `require` re-executes settings.php's function declarations and PHP dies
+// with "Cannot redeclare function flotilla_b64url()". That is a COMPILE-time fatal, not a
+// catchable Throwable, so evalContent.php's try/catch never sees it, nothing reaches
+// console.error, and the settings page just renders empty from that point on -- with the page
+// title still drawn above it, because the title is emitted before the content eval. Caught only
+// by loading the real page in a browser after a genuine install; CLI includes it exactly once,
+// so every command-line check passes.
+require_once '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
 // I10: self-heal the heartbeat cron entry on every page load, paired or not -- this is the
 // earliest point after a fresh install a user is guaranteed to reach (it's literally where
 // pairing happens), well before the next reboot or another plugin's install would otherwise
