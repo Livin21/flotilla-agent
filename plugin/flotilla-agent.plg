@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "flotilla-agent">
 <!ENTITY author    "Livin Mathew">
-<!ENTITY version   "2026.07.28">
+<!ENTITY version   "2026.08.07">
 <!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
 <!ENTITY pkg       "&plgPath;/&name;-&version;.txz">
@@ -30,7 +30,7 @@
 -->
 <FILE Name="&pkg;">
   <URL>https://github.com/Livin21/flotilla-agent/releases/download/&version;/&name;-&version;.txz</URL>
-  <MD5>e42121d634f6acb92dd5e49f3b9d7aa3</MD5>
+  <MD5>5d34f9532f1ae7c5603c9f588df87d59</MD5>
 </FILE>
 
 <FILE Run="/bin/bash" Method="install">

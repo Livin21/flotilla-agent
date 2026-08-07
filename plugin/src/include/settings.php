@@ -10,7 +10,7 @@ define('FLOTILLA_CFG', getenv('FLOTILLA_CFG') !== false
 define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
 // Must track plugin/flotilla-agent.plg's <!ENTITY version> -- this is the "installed" side of
 // Task 13 §8's min-agent comparison (see flotilla_min_agent_notice() below).
-define('FLOTILLA_AGENT_VERSION', '2026.07.28');
+define('FLOTILLA_AGENT_VERSION', '2026.08.07');
 
 function flotilla_b64url($bytes) { return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '='); }
 
