@@ -172,6 +172,37 @@ rather than prefixed into the title.
   `state:"going-down"` on SIGTERM/SIGINT before shutting its listener down.
   Conf file `/etc/flotilla-beacon.conf` (mode 600): lines `relay=`,
   `pairing=`, `secret=`, `key=`, `listen=`.
+
+  **What PVE must be configured to send it.** The beacon is not discovered by
+  Proxmox; a notification *target* and a *matcher* have to exist, and PVE
+  delivers nothing with only one of them. `beacon-install.sh` creates both
+  (see below); these are the exact values, for anyone configuring by hand or
+  debugging a target that isn't working:
+
+  | | |
+  |---|---|
+  | Target type | Webhook |
+  | Method | `POST` |
+  | URL | `http://127.0.0.1:8799/` (the `listen=` address; any path works — the beacon's mux matches `POST /`) |
+  | Header | `Authorization: Bearer <S>` — the `secret=` value, i.e. the pairing's `S` |
+  | Body | `{"severity":{{ json severity }},"title":{{ json title }},"message":{{ json message }}}` |
+  | Matcher | targets the webhook above, severities `warning` and `error` |
+
+  PVE stores webhook header *and* body values base64-encoded, so `pvesh` calls
+  must pass them pre-encoded. `{{ json <field> }}` is PVE's own template
+  syntax for emitting a correctly-escaped JSON string, which is what lets
+  arbitrary notification text through unmangled.
+
+  Authentication is checked in constant time before any relay contact; a
+  request without the exact header gets a bare `401` — and, since a
+  misconfigured target is otherwise invisible from both ends, a line in
+  `journalctl -u flotilla-beacon` saying whether the header was missing or
+  merely wrong (never the secret itself).
+
+  Send a test notification once configured (PVE 8.4+):
+  `pvesh create /cluster/notifications/targets/<name>/test`. Note the
+  endpoint-scoped path `/cluster/notifications/endpoints/webhook/<name>/test`
+  returns 501 on 8.4 — use the target-scoped one above.
 - `beacon/beacon-install.sh` — installs `cmd/flotilla-beacon` as a systemd
   service on a Proxmox host. Served straight from this repo's GitHub raw URL
   (not by the relay — Cloudflare refuses to deploy any Worker whose bundle

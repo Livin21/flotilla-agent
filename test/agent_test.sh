@@ -487,4 +487,41 @@ t [ "$(printf '%s' "$PLAIN" | jq -r .description)" = "$NASTY_DESC" ]
 NAME="no embedded command executed: the injection canary file does not exist"
 t [ ! -e "$CANARY" ]
 
+# I12: beacon-install.sh used to fetch the systemd unit from raw.githubusercontent.com with
+# `|| cp "$(dirname "$0")/flotilla-beacon.service"` as a fallback -- which can never fire
+# usefully under the documented `curl ... | bash -s -- ...` invocation, since $0 is then "bash".
+# A download failure aborted under `set -e` AFTER the binary and the secret-bearing config had
+# already been written. The unit is embedded now; this pins the embedded copy to the repo's copy
+# so the two can never drift.
+NAME="beacon-install.sh is valid bash"
+t bash -n beacon/beacon-install.sh
+
+NAME="the unit embedded in beacon-install.sh is byte-identical to beacon/flotilla-beacon.service"
+awk '/^cat > "\$UNIT" <<.FLOTILLA_UNIT.$/{f=1;next} /^FLOTILLA_UNIT$/{f=0} f' \
+  beacon/beacon-install.sh > "$TMP/unit-extracted"
+t [ -s "$TMP/unit-extracted" ]
+NAME="...and the extracted unit really did come out non-empty and matches"
+t diff -q "$TMP/unit-extracted" beacon/flotilla-beacon.service
+
+NAME="beacon-install.sh no longer downloads the unit at install time (no second network dep)"
+t [ -z "$(awk '!/^[[:space:]]*#/ && /curl/ && /flotilla-beacon\.service/ {print}' beacon/beacon-install.sh)" ]
+NAME="...and no longer relies on dirname \$0, which is \".\" under the documented curl|bash form"
+t [ -z "$(awk '!/^[[:space:]]*#/ && /dirname "\$0"/ {print}' beacon/beacon-install.sh)" ]
+
+# I4: the installer never configured PVE's webhook target at all, so heartbeats flowed (the app
+# showed the node online and healthy) while zero events ever reached the phone -- silent from
+# both ends. The body template it now installs has to match the fields handleWebhook decodes.
+NAME="the PVE webhook body template carries exactly the fields the beacon decodes"
+BODY_TMPL=$(awk -F"'" '/^WEBHOOK_BODY=/{print $2}' beacon/beacon-install.sh)
+OK=1
+for f in severity title message; do
+  case "$BODY_TMPL" in *"\"$f\":{{ json $f }}"*) ;; *) OK=0;; esac
+done
+t [ "$OK" -eq 1 ]
+NAME="...and cmd/flotilla-beacon decodes exactly those three fields"
+t grep -q 'struct{ Severity, Title, Message string }' cmd/flotilla-beacon/main.go
+
+NAME="beacon-install.sh points the PVE target at the same address it writes into listen="
+t grep -q 'WEBHOOK_URL="http://\$LISTEN/"' beacon/beacon-install.sh
+
 exit $FAIL

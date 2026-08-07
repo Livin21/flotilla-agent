@@ -2,6 +2,16 @@
 Description=Flotilla beacon (PVE push companion)
 After=network-online.target
 Wants=network-online.target
+# I11: with Restart=on-failure and RestartSec=5, systemd's own defaults
+# (StartLimitIntervalSec=10s, StartLimitBurst=5) are never reached -- 5-second
+# spacing is only two starts per 10s window -- so a permanently broken install
+# restarted every 5 seconds forever. Both realistic causes log.Fatal at startup:
+# /etc/flotilla-beacon.conf missing or malformed, and the listen port already
+# bound. That wrote to the journal indefinitely and never surfaced as a failed
+# unit an operator would notice in `systemctl status`. A 60s window with the same
+# burst of 5 gives up after ~25s and lands the unit in `failed` instead.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 ExecStart=/usr/local/bin/flotilla-beacon
@@ -20,6 +30,29 @@ RestartSec=5
 # process's own exit, without letting a genuinely stuck shutdown stall the
 # rest of the host's stop sequence — systemd SIGKILLs once this elapses.
 TimeoutStopSec=15
+
+# I11: the beacon runs as root with a listening socket and had no hardening at all.
+# It reads exactly one file (/etc/flotilla-beacon.conf), writes nothing anywhere, and
+# needs only a loopback bind plus outbound HTTPS to the relay — so the standard set
+# costs it nothing. ProtectSystem=strict with no ReadWritePaths= makes the entire
+# filesystem read-only to the service; reads (the conf, /etc/resolv.conf, the CA
+# bundle) are unaffected.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# AF_NETLINK is included deliberately: Go's pure-Go resolver and net package can
+# consult netlink for interface/route information on Linux, and a DNS failure here
+# would break every relay POST while looking like a network outage. AF_UNIX is needed
+# to reach journald.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

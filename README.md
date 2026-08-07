@@ -76,23 +76,43 @@ curl -fsSL https://raw.githubusercontent.com/Livin21/flotilla-agent/main/beacon/
 ```
 
 This installs `flotilla-beacon` as a systemd service listening on
-`127.0.0.1:8799` by default, writes `/etc/flotilla-beacon.conf` (mode 600),
-and points Proxmox's notification webhook target at it. Re-running the
-install command is safe (it rewrites config/binary/unit and restarts the
-service) — useful after a re-pair.
+`127.0.0.1:8799` by default (override with `FLOTILLA_LISTEN=host:port`),
+writes `/etc/flotilla-beacon.conf` (mode 600), and then creates the two
+pieces of Proxmox notification config the beacon needs:
 
-The binary is normally downloaded from this repo's GitHub releases (and the
-systemd unit from `raw.githubusercontent.com`), which requires a published
-release and this repo to be public — already a launch requirement (the
-Unraid CA and Proxmox community-scripts both mandate open source). For
-testing against an unpublished build — e.g. before this repo has
-ever cut a release — set `FLOTILLA_BEACON_BIN=/path/to/a/locally-built
-flotilla-beacon` (a binary you built yourself, e.g. via `GOOS=linux go build
--o flotilla-beacon ./cmd/flotilla-beacon`): the script installs that file
-directly instead of downloading one, and copies the `flotilla-beacon.service`
-unit sitting next to `beacon-install.sh` on disk instead of fetching it from
-GitHub. Everything else about the install (config file, systemd enable/restart)
-is unchanged.
+- a **webhook target** named `flotilla`, pointed at the beacon's listen
+  address, carrying `Authorization: Bearer <S>` and the body template
+  `{"severity":{{ json severity }},"title":{{ json title }},"message":{{ json message }}}`;
+- a **matcher** of the same name routing severities `warning` and `error` to
+  that target.
+
+Both are required — PVE delivers nothing with only one of them — and both are
+additive: PVE's stock `default-matcher` (everything → `mail-to-root`) is left
+alone. Re-running the install command is safe (it rewrites config, binary and
+unit, restarts the service, and recreates the target/matcher) — useful after a
+re-pair, which rotates `S` and would otherwise leave the old target 401ing.
+
+If the node isn't a Proxmox host, or `pvesh` fails, the install still finishes
+and prints the exact values to enter by hand instead. Pass `FLOTILLA_SKIP_PVE=1`
+to always configure it yourself. The full table of values is in
+[PROTOCOL.md](PROTOCOL.md), along with the `pvesh` commands.
+
+Once configured, confirm the whole chain with
+`pvesh create /cluster/notifications/targets/flotilla/test`. If nothing
+arrives, `journalctl -u flotilla-beacon` will say whether the webhook was
+rejected for a missing or wrong `Authorization` header.
+
+The binary is downloaded from this repo's GitHub releases, which requires a
+published release and this repo to be public — already a launch requirement
+(the Unraid CA and Proxmox community-scripts both mandate open source). The
+systemd unit is embedded in the installer rather than fetched, so the install
+has exactly one network dependency. For testing against an unpublished
+build — e.g. before this repo has ever cut a release — set
+`FLOTILLA_BEACON_BIN=/path/to/a/locally-built flotilla-beacon` (a binary you
+built yourself, e.g. via `GOOS=linux go build -o flotilla-beacon
+./cmd/flotilla-beacon`): the script installs that file directly instead of
+downloading one. Everything else about the install (config file, unit, systemd
+enable/restart, PVE notification target) is unchanged.
 
 ### `flotilla-seal` (standalone)
 

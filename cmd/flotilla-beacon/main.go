@@ -149,6 +149,16 @@ const maxBodyBytes = 64 << 10
 
 func handleWebhook(cfg config, w http.ResponseWriter, r *http.Request) {
 	if !authorized(r, cfg.Secret) {
+		// I4: log it. A PVE webhook target configured without the Authorization header (or
+		// with a stale one, e.g. after a re-pair that rotated S) used to fail completely
+		// silently: PVE records a delivery failure the operator never looks at, the beacon
+		// wrote nothing at all, and the phone simply never buzzed while heartbeats kept the
+		// server showing as online and healthy. One line in `journalctl -u flotilla-beacon`
+		// makes that diagnosable. The secret is never logged; whether a header was present
+		// at all is the only thing that distinguishes the two realistic misconfigurations.
+		log.Printf("rejected unauthorized webhook from %s (Authorization header %s) — check the "+
+			"PVE notification target's header against /etc/flotilla-beacon.conf",
+			r.RemoteAddr, map[bool]string{true: "present but wrong", false: "missing"}[r.Header.Get("Authorization") != ""])
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -363,7 +373,20 @@ func serve(cfg config, sig <-chan os.Signal) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /", func(w http.ResponseWriter, r *http.Request) { handleWebhook(cfg, w, r) })
-	srv := &http.Server{Addr: cfg.Listen, Handler: mux}
+	// I13: explicit timeouts. Without them a client that opens a connection and dribbles
+	// headers (or never sends any) holds a goroutine and an fd indefinitely. The default
+	// listen is loopback-only so the practical exposure is small, but isLoopback above
+	// deliberately *permits* a widened listen= with only a warning — which is exactly the
+	// configuration where an unbounded read matters. PVE's webhook payloads are a few
+	// hundred bytes delivered locally, so these are generous.
+	srv := &http.Server{
+		Addr:              cfg.Listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	go func() {
 		<-sig
