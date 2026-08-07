@@ -5,25 +5,77 @@
 <!ENTITY version   "2026.07.28">
 <!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
+<!ENTITY pkg       "&plgPath;/&name;-&version;.txz">
+<!ENTITY agentsDir "/boot/config/plugins/dynamix/notifications/agents">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" min="7.0.0"
         support="https://livinmathew.com/flotilla/push">
 <CHANGES>Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.</CHANGES>
+
+<!--
+  The package itself. Without this element the plugin manager never puts anything on the flash
+  and the install block below has nothing to extract: a fresh install would "succeed" while
+  leaving no settings page, no seal binary, no event hooks, and (before the guards added to the
+  install block) a notify shim pointing at a script that does not exist.
+
+  &pkg; is composed from &plgPath;/&name;-&version; (nested general-entity references, resolved
+  by the same libxml-backed parser Unraid's plugin manager uses, verified) so the on-flash
+  path, the release-asset name and the version can never drift apart by hand-editing one.
+
+  <MD5> is rewritten in place by plugin/build.sh every time it builds the .txz. Never hand-edit
+  it: the plugin manager refuses to install a package whose MD5 doesn't match, so a stale value
+  here fails the install closed (loudly, and before any of the install block runs) rather than
+  installing a mismatched payload. That also means the value committed here must be the MD5 of
+  the exact file uploaded as the release asset. See plugin/build.sh's release instructions.
+-->
+<FILE Name="&pkg;">
+  <URL>https://github.com/Livin21/flotilla-agent/releases/download/&version;/&name;-&version;.txz</URL>
+  <MD5>8ddc76b7e3d71616a8dd47129738e8ee</MD5>
+</FILE>
+
 <FILE Run="/bin/bash" Method="install">
 <INLINE>
 mkdir -p &plgPath;
-tar -xJf &plgPath;/flotilla-agent-&version;.txz -C /usr/local/emhttp/plugins/
+
+# Fail CLOSED on a bad/missing package. This block deliberately does not use `set -e` -- most
+# of what follows is best-effort by design (the php reassert, update_cron, ...) and a stray
+# non-zero from any of those must not abort a working install -- so the two steps that must
+# never be skipped past are guarded explicitly instead.
+#
+# Ordering matters more than the guard itself: everything that writes into UNRAID's OWN state
+# (the notify agent shim, the cron file, the array event hooks) happens strictly AFTER the
+# extraction is confirmed good. Installing a shim into Unraid's notification path that points
+# at a script which does not exist is strictly worse than installing nothing -- every
+# subsequent Unraid notification would spawn a shim that exits 127, forever, while the plugin
+# manager reported success.
+if ! tar -xJf &pkg; -C /usr/local/emhttp/plugins/ ; then
+  echo "flotilla-agent: could not extract &pkg; -- install aborted."
+  echo "flotilla-agent: nothing was written to Unraid's notification or cron paths."
+  exit 1
+fi
+# Defense in depth against a well-formed but wrong/truncated archive: assert the two files the
+# rest of this block (and every later notification) actually depends on really landed.
+if [ ! -f &emhttp;/scripts/agent.sh ] || [ ! -x &emhttp;/flotilla-seal ]; then
+  echo "flotilla-agent: package extracted but is missing agent.sh and/or flotilla-seal -- install aborted."
+  rm -rf &emhttp;
+  exit 1
+fi
+
 # I6: assert the [notify] agents bit at install time too (not just first pair/save) -- an
 # update/reinstall must not depend on the user re-pairing to restore it if Unraid's own
 # notification settings cleared it since. Best-effort and silent: flotilla_reassert_entities()
 # already no-ops cleanly when dynamix.cfg doesn't exist yet (fresh install, nothing paired).
 php -r "require '&emhttp;/include/settings.php'; flotilla_reassert_entities();" 2>/dev/null
 # notify agent shim on the flash (bash'd by notify; logic stays in emhttp so updates never touch this file)
-cat &gt; /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh &lt;&lt;'EOF'
+# mkdir -p first: stock Unraid ships this directory, but a never-touched notification config or a
+# hand-wiped flash config can leave it absent, in which case the redirect below would fail
+# silently and push would never fire while the settings page still said "Paired".
+mkdir -p &agentsDir;
+cat &gt; &agentsDir;/FlotillaPush.sh &lt;&lt;'EOF'
 #!/bin/bash
 exec bash /usr/local/emhttp/plugins/flotilla-agent/scripts/agent.sh
 EOF
-chmod +x /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
+chmod +x &agentsDir;/FlotillaPush.sh
 # heartbeat cron
 echo "* * * * * bash &emhttp;/scripts/heartbeat.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-agent.cron
 # I10: this update_cron is provably a no-op on a fresh install -- see the belt-and-braces
@@ -36,6 +88,14 @@ mkdir -p /usr/local/emhttp/webGui/event/array_started /usr/local/emhttp/webGui/e
 cp &emhttp;/scripts/event-array-started.sh  /usr/local/emhttp/webGui/event/array_started/flotilla-agent
 cp &emhttp;/scripts/event-stopping-array.sh /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
 chmod +x /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
+# Drop packages from previous versions so updates don't accumulate ~640KB each on the flash.
+# Runs only after a confirmed-good extraction above, and skips the package we just installed
+# from (the plugin manager reuses it, MD5-checked, instead of re-downloading on a reinstall).
+for f in &plgPath;/&name;-*.txz; do
+  [ -e "$f" ] || continue
+  [ "$f" = "&pkg;" ] &amp;&amp; continue
+  rm -f "$f"
+done
 # I10: belt-and-braces re-run of update_cron above. Unraid's own update_cron (see
 # /usr/local/sbin/update_cron) builds /etc/cron.d/root by iterating /var/log/plugins/*.plg --
 # i.e. it only picks up a plugin's *.cron files once that plugin is registered there -- and
@@ -65,7 +125,19 @@ echo "flotilla-agent &version; installed"
 # kept it silent) is already gone. Same discipline revoke.sh always follows itself: 5s
 # timeout, silent on failure, never blocks removal either way.
 bash &emhttp;/scripts/revoke.sh 2>/dev/null
-rm -f /boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh
+# ...and then clear the now-dead pairing from the flash config. The revoke above wipes the
+# relay's auth hash, device tokens and heartbeat state for this pairing, so PAIRING_ID/SECRET/KEY
+# are worthless the moment it succeeds. Keeping them (the previous behaviour) meant a
+# remove-then-reinstall came back up with $paired = true: the settings page rendered "Paired."
+# and a green "Heartbeat scheduled: yes" while every push 401'd at the relay -- and send-event.sh
+# deliberately never queues a 4xx, so every notification was silently dropped forever with no
+# error surfaced anywhere and nothing prompting the user to re-scan the QR. RELAY and the filter
+# preferences are deliberately preserved: they're not invalidated by the revoke, and a
+# self-hoster who set a custom relay shouldn't have to re-enter it after a reinstall.
+if [ -f &plgPath;/flotilla-agent.cfg ]; then
+  sed -i -e 's/^PAIRING_ID=.*/PAIRING_ID=""/' -e 's/^SECRET=.*/SECRET=""/' -e 's/^KEY=.*/KEY=""/' &plgPath;/flotilla-agent.cfg 2>/dev/null
+fi
+rm -f &agentsDir;/FlotillaPush.sh
 rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emhttp/webGui/event/stopping_array/flotilla-agent
 # I10: checked whether the install-time registration-ordering trap above applies in reverse
 # here too -- it doesn't. update_cron fully regenerates /etc/cron.d/root from scratch on every
@@ -79,8 +151,15 @@ rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emh
 # asymmetry, not this ordering.)
 rm -f &plgPath;/flotilla-agent.cron
 update_cron
+# Packages and tmpfs scratch state. The .txz files are ~640KB each on the flash; the /var/local
+# files are on tmpfs (so they'd vanish at reboot anyway) but leaving a stale retry queue behind
+# would otherwise let a reinstall-before-reboot drain events sealed under the revoked pairing.
+rm -f &plgPath;/&name;-*.txz
+rm -f /var/local/flotilla-agent.headers /var/local/flotilla-agent.queue
 rm -rf &emhttp;
-echo "flotilla-agent removed (pairing config kept on flash; delete &plgPath; to purge)"
+echo "flotilla-agent removed. The pairing was revoked at the relay and cleared from the flash config,"
+echo "so after a reinstall you must re-pair (Settings -&gt; Flotilla Agent -&gt; Pair) and re-scan the QR"
+echo "in the Flotilla app. Relay URL and filter settings were kept; delete &plgPath; to purge those too."
 </INLINE>
 </FILE>
 </PLUGIN>
