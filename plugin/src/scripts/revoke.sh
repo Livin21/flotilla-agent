@@ -15,7 +15,11 @@ source "$CFG"
 RELAY="${RELAY_OVERRIDE:-$RELAY}"
 [ -n "$PAIRING_ID" ] && [ -n "$SECRET" ] || exit 0
 
+# I2: S goes to curl via a config file on a process-substituted fd, never as an argv `-H`
+# header (/proc/<pid>/cmdline is world-readable). See send-event.sh's full comment.
 jq -cn --arg p "$PAIRING_ID" '{pairingID:$p}' | \
-  curl -s -m 5 -X DELETE -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+  curl -s -m 5 -X DELETE \
+       -K <(printf 'header = "Authorization: Bearer %s"\n' "$SECRET") \
+       -H "Content-Type: application/json" \
        -d @- "$RELAY/v1/pairing" >/dev/null 2>&1
 exit 0

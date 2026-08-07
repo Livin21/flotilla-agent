@@ -8,7 +8,19 @@ DIR="/usr/local/emhttp/plugins/flotilla-agent/scripts"
 # with a short bounded timeout -- a <=2s stall on Stop Array is acceptable, but
 # this call must get out before a teardown sequence can reap us. (Inverted from
 # the previous event-then-heartbeat order on purpose.)
-HEARTBEAT_TIMEOUT=2 STATE="going-down" bash "$DIR/heartbeat.sh"
+#
+# I3: the budget is now enforced from BOTH ends. heartbeat.sh skips its retry-queue drain
+# whenever STATE isn't "ok", so the going-down send really is the only work it does here; and
+# `timeout` puts a hard ceiling on the whole invocation regardless, so no future addition to
+# heartbeat.sh can quietly reintroduce an unbounded stall on the reboot/shutdown path. 4s
+# leaves margin over the 2s curl budget for process startup and jq; -k 1 escalates to SIGKILL
+# if a wedged curl ignores the SIGTERM. A timeout that fires is a silently-lost going-down
+# heartbeat (worst case: one false "Server unreachable" push), never a stalled shutdown.
+if command -v timeout >/dev/null 2>&1; then
+  timeout -k 1 4 env HEARTBEAT_TIMEOUT=2 STATE="going-down" bash "$DIR/heartbeat.sh"
+else
+  HEARTBEAT_TIMEOUT=2 STATE="going-down" bash "$DIR/heartbeat.sh"
+fi
 
 # The "Array stopping" event is informational only, so it stays backgrounded.
 # Detach it from the parent's process group with setsid when available (Unraid

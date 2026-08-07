@@ -23,29 +23,60 @@ mkdir -p "$HDR_DIR" 2>/dev/null
 DUMP_ARGS=()
 [ -w "$HDR_DIR" ] && DUMP_ARGS=(-D "$HDR_FILE")
 
+# I2: S goes to curl via a config file on a process-substituted fd, never as an argv `-H`
+# header -- /proc/<pid>/cmdline is world-readable, and this is the call site an attacker can
+# rely on catching, since it fires every 60s from cron. See send-event.sh's full comment.
 jq -cn --arg p "$PAIRING_ID" --arg s "${STATE:-ok}" '{pairingID:$p,state:$s}' | \
-  curl -s -m "$TIMEOUT" "${DUMP_ARGS[@]}" -X POST -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+  curl -s -m "$TIMEOUT" "${DUMP_ARGS[@]}" -X POST \
+       -K <(printf 'header = "Authorization: Bearer %s"\n' "$SECRET") \
+       -H "Content-Type: application/json" \
        -d @- "$RELAY/v1/heartbeat" >/dev/null 2>&1
 
 # I9: drain send-event.sh's on-disk retry queue (bounded to 10 entries there). Best-effort,
-# oldest first; stops at the first non-2xx response rather than burning this cron minute
+# oldest first; stops at the first retryable failure rather than burning this cron minute
 # retrying every remaining entry against a relay that's almost certainly still down for all of
 # them -- whatever's left just waits for the next heartbeat tick. Never blocks the heartbeat
-# send above (runs after it, and the whole drain is itself best-effort/silent) and never
-# grows or retries unbounded: queuing itself is what caps this at 10 (send-event.sh), and a
-# permanently-undeliverable entry is eventually evicted there by newer failures.
+# send above (runs after it, and the whole drain is itself best-effort/silent).
+#
+# I3: the drain is SKIPPED ENTIRELY on the shutdown path. event-stopping-array.sh calls this
+# script with HEARTBEAT_TIMEOUT=2 STATE=going-down and documents a "<=2s stall on Stop Array"
+# budget for it -- but HEARTBEAT_TIMEOUT bounded only the heartbeat above. The drain then ran
+# synchronously anyway with its own separate per-entry timeout, so the real worst case inside
+# Unraid's stopping_array hook (which also fires as a step in Reboot/Shutdown) was ~5s with the
+# relay unreachable and ~32s with a slow-but-answering relay and a full queue. Draining during
+# a shutdown is pointless regardless: the box is going away, and the queue is picked back up by
+# the per-minute cron on the next boot.
+#
+# The remaining ok-path drain is bounded twice over: per request by $DRAIN_TIMEOUT, and in
+# total wall clock by $DRAIN_BUDGET, so it can never run past its own cron minute into the next
+# invocation no matter how the entry cap or the timeouts are tuned later. Both are overridable
+# purely for testability, like every other path/knob in this script.
 QUEUE="${FLOTILLA_QUEUE:-/var/local/flotilla-agent.queue}"
-if [ -s "$QUEUE" ] 2>/dev/null; then
+DRAIN_TIMEOUT="${FLOTILLA_DRAIN_TIMEOUT:-3}"
+DRAIN_BUDGET="${FLOTILLA_DRAIN_BUDGET:-30}"
+if [ "${STATE:-ok}" = "ok" ] && [ -s "$QUEUE" ] 2>/dev/null; then
   PENDING=()
   FAILED=0
+  DRAIN_START=$SECONDS
   while IFS= read -r LINE || [ -n "$LINE" ]; do
     [ -n "$LINE" ] || continue
     if [ "$FAILED" -eq 1 ]; then PENDING+=("$LINE"); continue; fi
-    CODE=$(curl -s -m 3 -o /dev/null -w '%{http_code}' -X POST \
-      -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
-      -d "$LINE" "$RELAY/v1/push" 2>/dev/null)
+    if [ $(( SECONDS - DRAIN_START )) -ge "$DRAIN_BUDGET" ]; then FAILED=1; PENDING+=("$LINE"); continue; fi
+    CODE=$(printf '%s' "$LINE" | curl -s -m "$DRAIN_TIMEOUT" -o /dev/null -w '%{http_code}' -X POST \
+      -K <(printf 'header = "Authorization: Bearer %s"\n' "$SECRET") \
+      -H "Content-Type: application/json" \
+      -d @- "$RELAY/v1/push" 2>/dev/null)
     case "$CODE" in
       2??) ;; # delivered -- drop it from the queue
+      # I8: a 4xx is permanent, so drop the entry instead of re-queueing it -- mirroring
+      # send-event.sh's "never queue a 4xx" rule, which this loop used to contradict. Without
+      # this, one entry that can never succeed (the realistic case: an event queued during an
+      # outage, then "Reset pairing" -- the queued body carries the OLD pairingID but the drain
+      # sends it with the NEW secret, so it 401s forever) pinned itself at the queue head and
+      # blocked every deliverable entry behind it, permanently, once a minute. send-event.sh's
+      # eviction couldn't clear it either: that only fires on NEW failures, which stop happening
+      # as soon as the relay is healthy again.
+      4??) ;;
       *) FAILED=1; PENDING+=("$LINE");;
     esac
   done < "$QUEUE"
