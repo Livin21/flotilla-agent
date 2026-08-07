@@ -8,7 +8,7 @@
 require __DIR__ . '/../plugin/src/include/settings.php';
 
 // Ordinary values must round-trip byte-for-byte (Task 6's config contract depends on this).
-assert(flotilla_cfg_escape('https://push.flotilla.livinmathew.com') === 'https://push.flotilla.livinmathew.com');
+assert(flotilla_cfg_escape('https://flotilla-push.livinmathew.com') === 'https://flotilla-push.livinmathew.com');
 assert(flotilla_cfg_escape('warning') === 'warning');
 assert(flotilla_cfg_escape('yes') === 'yes');
 assert(flotilla_cfg_escape('11111111-1111-4111-8111-111111111111') === '11111111-1111-4111-8111-111111111111');

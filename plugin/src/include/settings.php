@@ -53,7 +53,7 @@ function flotilla_csrf_check($submitted) {
 }
 
 function flotilla_read_cfg() {
-  $cfg = ['RELAY' => 'https://push.flotilla.livinmathew.com', 'PAIRING_ID' => '', 'SECRET' => '', 'KEY' => '',
+  $cfg = ['RELAY' => 'https://flotilla-push.livinmathew.com', 'PAIRING_ID' => '', 'SECRET' => '', 'KEY' => '',
           'LEVEL_MIN' => 'warning', 'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes', 'CAT_OTHER' => 'yes'];
   if (is_readable(FLOTILLA_CFG)) {
     $parsed = parse_ini_file(FLOTILLA_CFG);

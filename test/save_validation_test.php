@@ -19,7 +19,7 @@
 require __DIR__ . '/../plugin/src/include/settings.php';
 
 function base_cfg() {
-  return ['RELAY' => 'https://push.flotilla.livinmathew.com', 'PAIRING_ID' => '11111111-1111-4111-8111-111111111111',
+  return ['RELAY' => 'https://flotilla-push.livinmathew.com', 'PAIRING_ID' => '11111111-1111-4111-8111-111111111111',
           'SECRET' => 'sekrit', 'KEY' => 'keeey', 'LEVEL_MIN' => 'warning',
           'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes', 'CAT_OTHER' => 'yes'];
 }
@@ -57,7 +57,7 @@ $outLevelOk = flotilla_apply_save(base_cfg(), ['action' => 'save', 'LEVEL_MIN' =
 assert($outLevelOk['LEVEL_MIN'] === 'alert');
 
 // --- I1: RELAY strict URL validation ---
-assert(flotilla_valid_relay('https://push.flotilla.livinmathew.com') === true);
+assert(flotilla_valid_relay('https://flotilla-push.livinmathew.com') === true);
 assert(flotilla_valid_relay('http://127.0.0.1:18799') === true);
 assert(flotilla_valid_relay('not a url') === false);
 assert(flotilla_valid_relay('ftp://example.com') === false);           // scheme not http/https
