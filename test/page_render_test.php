@@ -43,7 +43,7 @@ $body = str_replace('/usr/local/emhttp/plugins/flotilla-agent/include/settings.p
                     __DIR__ . '/../plugin/src/include/settings.php', $body);
 // PHP CLI never populates $_GET, so the harness injects it.
 $pagePhp = "$tmp/page.php";
-file_put_contents($pagePhp, "<?php \$_GET = json_decode((string)getenv('FLOTILLA_TEST_GET'), true) ?: []; ?>" . $body);
+file_put_contents($pagePhp, "<?php \$_GET = json_decode((string)getenv('FLOTILLA_TEST_GET'), true) ?: []; \$_POST = json_decode((string)getenv('FLOTILLA_TEST_POST'), true) ?: []; ?>" . $body);
 
 function render(string $pagePhp, array $get): array {
   putenv('FLOTILLA_TEST_GET=' . json_encode($get));
@@ -139,6 +139,31 @@ $pageSrc = file_get_contents(__DIR__ . '/../plugin/src/FlotillaAgent.page');
 assert(preg_match('/^\s*require\s+[\'"][^\'"]*settings\.php/m', $pageSrc) !== 1,
        'FlotillaAgent.page must use require_once for settings.php, never a bare require');
 echo "page_render: the page survives Unraid's double evaluation\n";
+
+
+// --- a POST that is not one of ours must still RENDER, not exit mid-page --------------------
+// Unraid renders this page for POST requests too (a browser reload after any POST re-submits
+// it). The handler used to engage on ANY POST, fail the CSRF check, and exit() during the
+// render -- producing a blank settings page with no error in any log and nothing in the browser
+// console. Foreign POSTs must fall through to a normal render.
+write_cfg($cfgPath);
+function render_post(string $pagePhp, array $post): array {
+  putenv('FLOTILLA_TEST_GET=' . json_encode([]));
+  putenv('FLOTILLA_TEST_POST=' . json_encode($post));
+  putenv('FLOTILLA_FORCE_WEB=1');
+  $out = []; $rc = 0;
+  exec('REQUEST_METHOD=POST ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($pagePhp) . ' 2>&1', $out, $rc);
+  putenv('FLOTILLA_FORCE_WEB'); putenv('FLOTILLA_TEST_POST');
+  return [$rc, implode("\n", $out)];
+}
+foreach ([[], ['somethingelse' => '1'], ['action' => 'not-ours']] as $post) {
+  [$rc, $html] = render_post($pagePhp, $post);
+  $d = json_encode($post);
+  assert($rc === 0, "a foreign POST must not kill the page render ($d), got exit $rc: $html");
+  assert(strpos($html, 'Flotilla Push') !== false, "a foreign POST must still render the page ($d): $html");
+  assert(strpos($html, 'value="pair"') !== false, "the pair form must still render for a foreign POST ($d)");
+}
+echo "page_render: a POST that isn't ours still renders the page\n";
 
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

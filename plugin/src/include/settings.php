@@ -440,7 +440,34 @@ function flotilla_apply_save(array $cfg, array $post) {
   return $cfg;
 }
 
-if (php_sapi_name() !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+/*
+ * The set of form actions this page owns. The POST handler below MUST NOT engage for anything
+ * else.
+ *
+ * This file is included while Unraid RENDERS the settings page, not only when handling a form
+ * submission -- and that render happens for POST requests too (a browser reload after any POST
+ * re-submits it, and Unraid's own webGUI navigation can POST). The guard here used to be a
+ * blanket `REQUEST_METHOD === 'POST'`, which hijacked those unrelated POSTs: the CSRF check
+ * failed and called exit() in the middle of the page render.
+ *
+ * That failed completely silently. By the time this file is included Unraid has already emitted
+ * the page head, so `header('Location: ...')` is a no-op and the exit merely truncates the
+ * response -- the settings page renders BLANK below its title, with nothing in /var/log/phplog,
+ * nothing in nginx's error log, and nothing in the browser console, because an exit() is neither
+ * a PHP error nor a catchable Throwable. Unraid's own evalContent.php try/catch cannot see it
+ * either. It reproduces only by loading the real page in a browser after a genuine install;
+ * every CLI check passes, because php_sapi_name() is 'cli' there and this block never runs.
+ *
+ * A POST that isn't one of ours now falls through and the page renders normally.
+ */
+const FLOTILLA_ACTIONS = ['pair', 'reset', 'save', 'repair_entities', 'repair_cron', 'test'];
+
+// Overridable so the CLI test suite can exercise this web-only path; production always takes
+// php_sapi_name(), matching the existing FLOTILLA_* env override pattern used throughout.
+$flotillaIsWeb = getenv('FLOTILLA_FORCE_WEB') === '1' || php_sapi_name() !== 'cli';
+
+if ($flotillaIsWeb && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+    && in_array($_POST['action'] ?? '', FLOTILLA_ACTIONS, true)) {
   // C1: reject any POST whose csrf_token doesn't match this session's real token. No state
   // change on mismatch -- just redirect, same as every other unhandled action.
   if (!flotilla_csrf_check($_POST['csrf_token'] ?? null)) { header('Location: /Settings/FlotillaAgent'); exit; }
