@@ -470,6 +470,12 @@ const FLOTILLA_ACTIONS = ['pair', 'reset', 'save', 'repair_entities', 'repair_cr
  * post/redirect/get pattern actually works -- including for the CSRF-reject path.
  *
  * FLOTILLA_FORCE_DIRECT is a test-suite override, matching the existing FLOTILLA_* env pattern.
+ *
+ * The field is named flotilla_action, NOT action: an <input name="action"> shadows the form's
+ * DOM `action` property, so Unraid's own page-init JS (BodyInlineJS.php:251,
+ * `$(this).prop('action').actionName()`) gets our input element instead of the URL string and
+ * throws -- which aborts the rest of Unraid's ready handler for the whole page (scroll restore,
+ * alert banners, the disabled-notifications warning). Latent since 1.0.
  */
 $flotillaIsDirect = getenv('FLOTILLA_FORCE_DIRECT') === '1'
   || (php_sapi_name() !== 'cli'
@@ -487,7 +493,7 @@ if ($flotillaIsDirect && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
   $cfg = flotilla_read_cfg();
   $errs = [];
-  switch ($_POST['action'] ?? '') {
+  switch ($_POST['flotilla_action'] ?? '') {
     case 'pair': case 'reset': $cfg = flotilla_pair($cfg); break;
     case 'save':
       if (isset($_POST['LEVEL_MIN']) && !flotilla_valid_level_min($_POST['LEVEL_MIN'])) $errs[] = 'level';

@@ -45,7 +45,7 @@ $entitiesOk = $paired ? flotilla_entities_ok() : null;
 <?php if (in_array('level', $errList, true)): ?><p style="color:red">Minimum importance value was invalid — kept the previous value.</p><?php endif; ?>
 <?php if (!$paired): ?>
 <p>Pair this server with the Flotilla iOS app. Pairing generates an end-to-end encryption key that never leaves your network except inside the QR code below.</p>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
+<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="flotilla_action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
 <?php else: ?>
 <p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
 <?php if ($minAgentNotice !== null): ?>
@@ -53,17 +53,17 @@ $entitiesOk = $paired ? flotilla_entities_ok() : null;
 <?php endif; ?>
 <?php if ($entitiesOk !== null): ?>
 <p>Unraid will deliver warnings/alerts to Flotilla: <b style="color:<?= $entitiesOk ? 'lightgreen' : 'red' ?>"><?= $entitiesOk ? 'yes' : 'no' ?></b>
-<?php if (!$entitiesOk): ?> — Unraid's own notification settings turned this off. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
+<?php if (!$entitiesOk): ?> — Unraid's own notification settings turned this off. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
 <?php endif; ?>
 <?php if ($cronOk !== null): ?>
 <p>Heartbeat scheduled: <b style="color:<?= $cronOk ? 'lightgreen' : 'red' ?>"><?= $cronOk ? 'yes' : 'no' ?></b>
-<?php if (!$cronOk): ?> — Unraid hasn't picked up the heartbeat cron entry yet. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
+<?php if (!$cronOk): ?> — Unraid hasn't picked up the heartbeat cron entry yet. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
 <?php endif; ?>
 <div id="qr"></div>
 <script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>
 <p>Manual code:</p><textarea readonly rows="3" style="width:100%"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php" style="margin-top:12px"><input type="hidden" name="action" value="test"><?= $csrfField ?><button type="submit">Send test notification</button></form>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="action" value="save"><?= $csrfField ?>
+<form method="post" action="/plugins/flotilla-agent/include/settings.php" style="margin-top:12px"><input type="hidden" name="flotilla_action" value="test"><?= $csrfField ?><button type="submit">Send test notification</button></form>
+<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="flotilla_action" value="save"><?= $csrfField ?>
   <h4>Filters</h4>
   <label>Minimum importance:
   <select name="LEVEL_MIN">
@@ -83,6 +83,6 @@ $entitiesOk = $paired ? flotilla_entities_ok() : null;
   <button type="submit">Save</button>
 </form>
 <form method="post" action="/plugins/flotilla-agent/include/settings.php" onsubmit="return confirm('Reset pairing? All paired devices stop receiving pushes until they re-scan.')">
-  <input type="hidden" name="action" value="reset"><?= $csrfField ?><button type="submit" style="color:red">Reset pairing</button></form>
+  <input type="hidden" name="flotilla_action" value="reset"><?= $csrfField ?><button type="submit" style="color:red">Reset pairing</button></form>
 <?php endif; ?>
 </div>

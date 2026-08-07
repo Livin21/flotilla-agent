@@ -160,11 +160,11 @@ function render_post(string $pagePhp, array $post): array {
 // from the pre-CSRF 1.0 form) on every reload. `pair` IS one of our actions, so an
 // action-allowlist guard does not save the render -- only direct-endpoint dispatch does.
 // Rendering must survive every POST shape AND must never execute the action (cfg unchanged).
-foreach ([[], ['somethingelse' => '1'], ['action' => 'not-ours'],
-          ['action' => 'pair'],                                   // stale re-POST, no token
-          ['action' => 'pair', 'csrf_token' => 'wrong-token'],    // stale re-POST, bad token
-          ['action' => 'pair', 'csrf_token' => 'test-token-123'], // even a VALID token: render only
-          ['action' => 'reset', 'csrf_token' => 'test-token-123']] as $post) {
+foreach ([[], ['somethingelse' => '1'], ['flotilla_action' => 'not-ours'],
+          ['flotilla_action' => 'pair'],                                   // stale re-POST, no token
+          ['flotilla_action' => 'pair', 'csrf_token' => 'wrong-token'],    // stale re-POST, bad token
+          ['flotilla_action' => 'pair', 'csrf_token' => 'test-token-123'], // even a VALID token: render only
+          ['flotilla_action' => 'reset', 'csrf_token' => 'test-token-123']] as $post) {
   write_cfg($cfgPath);   // fresh unpaired cfg before each shape
   [$rc, $html] = render_post($pagePhp, $post);
   $d = json_encode($post);
@@ -193,14 +193,14 @@ function run_direct(array $post): array {
 }
 // valid CSRF + pair -> the action executes (cfg gains a pairing) and nothing is rendered
 write_cfg($cfgPath);
-[$rc, $out] = run_direct(['action' => 'pair', 'csrf_token' => 'test-token-123']);
+[$rc, $out] = run_direct(['flotilla_action' => 'pair', 'csrf_token' => 'test-token-123']);
 assert($rc === 0, "direct pair must exit cleanly: $out");
 $after = file_get_contents($cfgPath);
 assert(strpos($after, 'PAIRING_ID=""') === false, "direct pair with a valid token must write a pairing: $after");
 assert(strpos($out, 'Flotilla Push') === false, 'the direct endpoint must not render the page');
 // bad CSRF -> no state change
 write_cfg($cfgPath);
-[$rc, $out] = run_direct(['action' => 'pair', 'csrf_token' => 'nope']);
+[$rc, $out] = run_direct(['flotilla_action' => 'pair', 'csrf_token' => 'nope']);
 assert($rc === 0, "direct pair with a bad token must exit cleanly: $out");
 assert(strpos(file_get_contents($cfgPath), 'PAIRING_ID=""') !== false, 'a bad token must change nothing');
 echo "page_render: the direct endpoint executes actions, CSRF still enforced\n";
