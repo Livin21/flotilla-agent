@@ -1,6 +1,12 @@
 <?php
 /* Flotilla Agent settings backend. Pure functions + a tiny POST handler used by FlotillaAgent.page. */
-define('FLOTILLA_CFG', '/boot/config/plugins/flotilla-agent/flotilla-agent.cfg');
+// Honors a FLOTILLA_CFG env override purely for testability -- the same pattern as
+// flotilla_var_ini_path()/flotilla_dynamix_cfg_path()/flotilla_headers_path()/
+// flotilla_cron_file_path() below, and the same env var Task 6's bash scripts already read.
+// Production always falls back to the real, hardcoded Unraid path when the env var is unset.
+define('FLOTILLA_CFG', getenv('FLOTILLA_CFG') !== false
+  ? getenv('FLOTILLA_CFG')
+  : '/boot/config/plugins/flotilla-agent/flotilla-agent.cfg');
 define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
 // Must track plugin/flotilla-agent.plg's <!ENTITY version> -- this is the "installed" side of
 // Task 13 §8's min-agent comparison (see flotilla_min_agent_notice() below).
@@ -85,13 +91,32 @@ function flotilla_cfg_escape($v) {
   return str_replace(['\\', '"', '$', '`'], ['\\\\', '\\"', '\\$', '\\`'], $v);
 }
 
+/*
+ * I9: write via a temp file that is chmod'd 0600 BEFORE it is renamed into place. The previous
+ * file_put_contents()-then-chmod() order left the config -- containing SECRET and KEY -- sitting
+ * at its final path with default-umask permissions for the window between the two calls, and a
+ * crash or a failed chmod in between left it that way permanently. rename() within the same
+ * directory is atomic, so a reader also never sees a half-written config.
+ *
+ * CAVEAT, deliberately recorded rather than papered over: FLOTILLA_CFG lives on /boot, which on
+ * Unraid is a vfat flash volume. vfat carries no POSIX mode bits -- permissions come from the
+ * mount's fmask/dmask -- so chmod() there is typically a no-op, and this cannot make the file
+ * 0600 if the mount says otherwise. That is a property of Unraid's flash, not something this
+ * function can fix; what it CAN do is stop being the reason the mode is wrong. The same pattern
+ * (umask + temp + chmod + atomic mv) is what beacon-install.sh already uses for
+ * /etc/flotilla-beacon.conf, where the mode bits are real.
+ */
 function flotilla_write_cfg($cfg) {
   $dir = dirname(FLOTILLA_CFG);
   if (!is_dir($dir)) mkdir($dir, 0700, true);
   $out = '';
   foreach ($cfg as $k => $v) $out .= $k . '="' . flotilla_cfg_escape($v) . '"' . "\n";
-  file_put_contents(FLOTILLA_CFG, $out);
-  chmod(FLOTILLA_CFG, 0600);
+  $tmp = FLOTILLA_CFG . '.tmp.' . getmypid();
+  if (@file_put_contents($tmp, $out) === false) return false;
+  @chmod($tmp, 0600);
+  if (!@rename($tmp, FLOTILLA_CFG)) { @unlink($tmp); return false; }
+  @chmod(FLOTILLA_CFG, 0600);
+  return true;
 }
 
 /*
@@ -156,12 +181,34 @@ function flotilla_entities_ok() {
   return true;
 }
 
+/*
+ * I15: this is a read-modify-write of UNRAID'S OWN notification config, and it runs on every
+ * pair, every save, every explicit repair and on plugin install. The previous
+ * file_get_contents()/file_put_contents() pair had no locking and no atomicity, so a Flotilla
+ * save landing at the same moment as a save on Unraid's own Settings -> Notifications page (or
+ * as the install block's php -r racing an emhttp write) could clobber the other side's write or
+ * leave dynamix.cfg truncated. Corrupting Unraid's notification configuration is a
+ * disrupting-the-host outcome, which is why the narrow window is worth closing.
+ *
+ * Two changes: (1) return early when the text is already correct, which is the overwhelmingly
+ * common case -- the repair is idempotent and called constantly, so not writing at all unless
+ * something actually needs fixing removes almost every opportunity for the race; and (2) when a
+ * write is genuinely needed, write a temp file in the same directory and rename() it into place,
+ * so a reader never sees a partial file and a crash mid-write can't truncate Unraid's config.
+ * The original file's permissions are carried over to the replacement.
+ */
 function flotilla_reassert_entities() {
   $path = flotilla_dynamix_cfg_path();
   if (!is_readable($path) || !is_writable($path)) return;
   $text = file_get_contents($path);
   if ($text === false) return;
-  file_put_contents($path, flotilla_fix_entities($text));
+  $fixed = flotilla_fix_entities($text);
+  if ($fixed === $text) return; // already correct: don't touch Unraid's config at all
+  $tmp = $path . '.flotilla-tmp.' . getmypid();
+  if (@file_put_contents($tmp, $fixed) === false) return;
+  $mode = @fileperms($path);
+  if ($mode !== false) @chmod($tmp, $mode & 0777);
+  if (!@rename($tmp, $path)) @unlink($tmp);
 }
 
 /*
@@ -184,9 +231,21 @@ function flotilla_pair($cfg) {
   flotilla_write_cfg($cfg);
   flotilla_reassert_entities();
   // ensure the notify shim exists (also done by .plg install)
+  //
+  // I10: mkdir -p the directory first and chmod the result executable. Stock Unraid ships that
+  // directory, but a wiped flash config or a user who has never touched notification settings
+  // can leave it absent, in which case this write failed silently and push never fired while
+  // this page still said "Paired." And the .plg's install block chmod +x's the shim it writes
+  // while this fallback did not -- so a shim recreated here landed at whatever the umask gave,
+  // which on a notify implementation that only runs executable agents is a silently dead
+  // install. Both are best-effort (@): a failure here must never fatal the pairing itself.
   $shim = '/boot/config/plugins/dynamix/notifications/agents/FlotillaPush.sh';
-  if (!file_exists($shim))
-    file_put_contents($shim, "#!/bin/bash\nexec bash /usr/local/emhttp/plugins/flotilla-agent/scripts/agent.sh\n");
+  $shimDir = dirname($shim);
+  if (!is_dir($shimDir)) @mkdir($shimDir, 0755, true);
+  if (!file_exists($shim)) {
+    if (@file_put_contents($shim, "#!/bin/bash\nexec bash /usr/local/emhttp/plugins/flotilla-agent/scripts/agent.sh\n") !== false)
+      @chmod($shim, 0755);
+  }
   return $cfg;
 }
 
@@ -221,6 +280,36 @@ function flotilla_valid_relay($v) {
   if (filter_var($v, FILTER_VALIDATE_URL) === false) return false;
   $scheme = strtolower((string)parse_url($v, PHP_URL_SCHEME));
   return $scheme === 'http' || $scheme === 'https';
+}
+
+/*
+ * I14: flotilla_valid_relay() deliberately accepts http:// -- the test harness needs
+ * http://127.0.0.1:18799, and LAN self-hosting is a documented goal -- but every request to the
+ * relay carries "Authorization: Bearer <S>", so an http:// relay outside the local network puts
+ * the bearer secret on the wire in the clear on every heartbeat (once a minute, forever). Event
+ * *content* is unaffected: it's sealed with K before it leaves the box, so this is a secret
+ * exposure, not a content exposure -- but S is enough to forge a going-down heartbeat that
+ * silences the dead-man switch, or to delete the pairing.
+ *
+ * Returns true only when a warning is genuinely warranted, so the settings page doesn't cry wolf
+ * at the two legitimate http:// cases: loopback and RFC1918/reserved addresses (a self-hosted
+ * relay on the LAN), and ".local"/"localhost" names. A bare hostname can't be classified without
+ * resolving it -- which this page must not do -- so it warns, since a plain hostname over http
+ * is far more often a real remote host than a LAN one.
+ */
+function flotilla_relay_insecure($relay) {
+  if (!is_string($relay) || $relay === '') return false;
+  if (strtolower((string)parse_url($relay, PHP_URL_SCHEME)) === 'https') return false;
+  $host = (string)parse_url($relay, PHP_URL_HOST);
+  if ($host === '') return false; // unparsable; flotilla_valid_relay() is what gates this
+  $host = strtolower(trim($host, '[]'));
+  if ($host === 'localhost' || substr($host, -6) === '.local') return false;
+  if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+    // No-priv/no-res filters reject loopback, RFC1918, link-local and other reserved ranges --
+    // i.e. "passes" here means a genuinely routable, public address.
+    return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+  }
+  return true;
 }
 
 // Path to heartbeat.sh's last-captured relay response headers (Task 13 §8; see the -D flag

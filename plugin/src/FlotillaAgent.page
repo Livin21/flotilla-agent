@@ -14,7 +14,10 @@ $cronOk = flotilla_cron_ok();
 $cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== '';
 $csrf = flotilla_csrf_token();
 $csrfField = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf !== false ? $csrf : '') . '">';
-$errList = isset($_GET['err']) ? explode(',', $_GET['err']) : [];
+// I7: explode()'s second argument must be a string -- PHP 8 (which Unraid 7 ships) throws an
+// uncaught TypeError, not a warning, if it isn't. isset() alone was not enough: a crafted
+// /Settings/FlotillaAgent?err[]=x hands this an array and 500s the settings page.
+$errList = is_string($_GET['err'] ?? null) ? explode(',', $_GET['err']) : [];
 // Task 13 §8: only meaningful once paired (heartbeat.sh -- and therefore the header capture
 // it does -- only ever runs against a real pairing). flotilla_min_agent_notice() itself
 // already fails closed to null on any missing/malformed input, never fatals.
@@ -63,6 +66,9 @@ $entitiesOk = $paired ? flotilla_entities_ok() : null;
   <label><input type="checkbox" name="CAT_OTHER" value="yes" <?= $cfg['CAT_OTHER'] === 'yes' ? 'checked' : '' ?>> Everything else (plugins, status reports)</label><br>
   <h4>Advanced</h4>
   <label>Relay URL: <input type="text" name="RELAY" value="<?= htmlspecialchars($cfg['RELAY']) ?>" style="width:100%"></label>
+  <?php if (flotilla_relay_insecure($cfg['RELAY'])): ?>
+  <p style="color:orange"><b>Not encrypted in transit:</b> this relay URL isn't <code>https</code> and isn't on your local network, so the authentication secret this server sends with every heartbeat travels in the clear. Your alert <i>contents</i> are still end-to-end encrypted. Use <code>https</code> unless the relay is on your LAN.</p>
+  <?php endif; ?>
   <p style="opacity:.7">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at their own deployment.</p>
   <button type="submit">Save</button>
 </form>
