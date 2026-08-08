@@ -125,7 +125,7 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 <?php if (flotilla_relay_insecure($cfg['RELAY'])): ?>
 <div class="fl-warn"><b>Not encrypted in transit:</b> this relay URL isn't <code>https</code> and isn't on your local network, so the authentication secret this server sends with every heartbeat travels in the clear. Your alert <i>contents</i> are still end-to-end encrypted. Use <code>https</code> unless the relay is on your LAN.</div>
 <?php endif; ?>
-<p class="fl-muted">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at their own deployment.</p>
+<p class="fl-muted">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at <a href="https://github.com/Livin21/flotilla-relay" target="_blank" rel="noopener">their own deployment</a>.</p>
 <button type="submit">Save</button>
 </div>
 </form>
@@ -137,4 +137,5 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 </div>
 </div>
 <?php endif; ?>
+<p class="fl-muted" style="font-size:.85em;margin-top:2px">Flotilla Agent <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?> · open source: <a href="https://github.com/Livin21/flotilla-agent" target="_blank" rel="noopener">flotilla-agent</a> · <a href="https://github.com/Livin21/flotilla-relay" target="_blank" rel="noopener">flotilla-relay</a></p>
 </div>
