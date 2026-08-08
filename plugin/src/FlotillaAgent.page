@@ -83,7 +83,7 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 <div class="fl-pair">
 <div class="fl-qr"><div id="qr"></div></div>
 <div class="fl-pairtext">
-<p style="margin-top:0">Scan from <b>Flotilla → Settings → Notifications → Add server</b>.</p>
+<p style="margin-top:0">Scan from <b>Flotilla → Settings → Notifications → Set up push for this server</b> (or “Scan a pairing QR”).</p>
 <p class="fl-muted">Anyone who can see this QR can read your alerts — treat it like a password. Up to 10 devices can scan the same code.</p>
 <p class="fl-muted" style="margin-bottom:4px">Can't scan? Copy the code instead:</p>
 <div class="fl-code">
