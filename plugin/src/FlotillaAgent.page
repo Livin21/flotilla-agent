@@ -37,52 +37,104 @@ $minAgentNotice = $paired ? flotilla_min_agent_notice(FLOTILLA_AGENT_VERSION) : 
 // shim run at all. null (dynamix.cfg unreadable/unparsable) shows nothing rather than a
 // false alarm.
 $entitiesOk = $paired ? flotilla_entities_ok() : null;
+$FL_EP = '/plugins/flotilla-agent/include/settings.php';
 ?>
 <script src="/plugins/flotilla-agent/js/qrcode.min.js"></script>
-<div style="max-width:640px">
-<h3>Flotilla Push</h3>
-<?php if (in_array('relay', $errList, true)): ?><p style="color:red">Relay URL was invalid — kept the previous value.</p><?php endif; ?>
-<?php if (in_array('level', $errList, true)): ?><p style="color:red">Minimum importance value was invalid — kept the previous value.</p><?php endif; ?>
+<style>
+/* Scoped to .fl-wrap. Deliberately theme-neutral: Unraid ships light AND dark themes, so every
+   surface is built from currentColor/rgba rather than fixed page colors. The one fixed-color
+   surface is the QR card, which must stay white for scanner contrast. */
+.fl-wrap{max-width:760px}
+.fl-wrap .fl-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:16px 18px;margin:0 0 16px}
+.fl-wrap .fl-card h4{margin:0 0 10px;font-size:1.05em;letter-spacing:.02em}
+.fl-wrap .fl-muted{opacity:.72}
+.fl-wrap .fl-row{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+.fl-wrap .fl-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
+.fl-wrap .fl-ok{background:#27ae60}
+.fl-wrap .fl-bad{background:#e74c3c}
+.fl-wrap .fl-pair{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.fl-wrap .fl-qr{background:#fff;padding:14px;border-radius:10px;display:inline-block;line-height:0;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.fl-wrap .fl-pairtext{flex:1;min-width:260px}
+.fl-wrap .fl-code{display:flex;gap:8px;align-items:stretch;margin-top:6px}
+.fl-wrap .fl-code textarea{flex:1;font-family:monospace;font-size:11px;resize:vertical;opacity:.85}
+.fl-wrap .fl-warn{border-left:3px solid #e67e22;padding:6px 10px;margin:8px 0}
+.fl-wrap .fl-err{border-left:3px solid #e74c3c;padding:6px 10px;margin:8px 0;color:#e74c3c}
+.fl-wrap .fl-danger{border-color:rgba(231,76,60,.5)}
+.fl-wrap .fl-spread{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.fl-wrap label{display:block;margin:6px 0}
+.fl-wrap .fl-field input[type=text]{width:100%;margin-top:4px}
+</style>
+<div class="fl-wrap">
+<?php if (in_array('relay', $errList, true)): ?><div class="fl-err">Relay URL was invalid — kept the previous value.</div><?php endif; ?>
+<?php if (in_array('level', $errList, true)): ?><div class="fl-err">Minimum importance value was invalid — kept the previous value.</div><?php endif; ?>
 <?php if (!$paired): ?>
-<p>Pair this server with the Flotilla iOS app. Pairing generates an end-to-end encryption key that never leaves your network except inside the QR code below.</p>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="flotilla_action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
+<div class="fl-card">
+<h4>Flotilla Push</h4>
+<p>Pair this server with the Flotilla iOS app to get your Unraid alerts as push notifications — end-to-end encrypted, so the relay in between can never read them.</p>
+<p class="fl-muted">Pairing generates an encryption key that never leaves your network except inside the QR code shown after pairing.</p>
+<form method="post" action="<?= $FL_EP ?>"><input type="hidden" name="flotilla_action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
+</div>
 <?php else: ?>
-<p><b>Paired.</b> Scan from Flotilla → Settings → Notifications → Add server. Anyone who can see this QR can read your alerts — treat it like a password.</p>
 <?php if ($minAgentNotice !== null): ?>
-<p style="color:orange"><b>Update needed:</b> the relay requires agent ≥ <?= htmlspecialchars($minAgentNotice) ?> — this install is <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?>. Update the plugin from Community Applications.</p>
+<div class="fl-warn"><b>Update needed:</b> the relay requires agent ≥ <?= htmlspecialchars($minAgentNotice) ?> — this install is <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?>. Update the plugin from Community Applications.</div>
 <?php endif; ?>
+<div class="fl-card">
+<div class="fl-spread"><h4><span class="fl-dot fl-ok" style="margin-right:6px"></span><b>Paired.</b></h4></div>
+<div class="fl-pair">
+<div class="fl-qr"><div id="qr"></div></div>
+<div class="fl-pairtext">
+<p style="margin-top:0">Scan from <b>Flotilla → Settings → Notifications → Add server</b>.</p>
+<p class="fl-muted">Anyone who can see this QR can read your alerts — treat it like a password. Up to 10 devices can scan the same code.</p>
+<p class="fl-muted" style="margin-bottom:4px">Can't scan? Copy the code instead:</p>
+<div class="fl-code">
+<textarea readonly rows="2" id="fl-manual" onclick="this.select()"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>
+<button type="button" onclick="var t=document.getElementById('fl-manual');t.select();try{navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}this.textContent='Copied';var b=this;setTimeout(function(){b.textContent='Copy'},1500)">Copy</button>
+</div>
+</div>
+</div>
+<script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 196, height: 196});</script>
+</div>
+<div class="fl-card">
+<h4>Health</h4>
 <?php if ($entitiesOk !== null): ?>
-<p>Unraid will deliver warnings/alerts to Flotilla: <b style="color:<?= $entitiesOk ? 'lightgreen' : 'red' ?>"><?= $entitiesOk ? 'yes' : 'no' ?></b>
-<?php if (!$entitiesOk): ?> — Unraid's own notification settings turned this off. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
+<div class="fl-row"><span class="fl-dot <?= $entitiesOk ? 'fl-ok' : 'fl-bad' ?>"></span>Unraid delivers warnings/alerts to Flotilla: <b><?= $entitiesOk ? 'yes' : 'no' ?></b>
+<?php if (!$entitiesOk): ?><span class="fl-muted">— Unraid's own notification settings turned this off.</span> <form method="post" action="<?= $FL_EP ?>" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_entities"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></div>
 <?php endif; ?>
 <?php if ($cronOk !== null): ?>
-<p>Heartbeat scheduled: <b style="color:<?= $cronOk ? 'lightgreen' : 'red' ?>"><?= $cronOk ? 'yes' : 'no' ?></b>
-<?php if (!$cronOk): ?> — Unraid hasn't picked up the heartbeat cron entry yet. <form method="post" action="/plugins/flotilla-agent/include/settings.php" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></p>
+<div class="fl-row"><span class="fl-dot <?= $cronOk ? 'fl-ok' : 'fl-bad' ?>"></span>Heartbeat scheduled: <b><?= $cronOk ? 'yes' : 'no' ?></b>
+<?php if (!$cronOk): ?><span class="fl-muted">— Unraid hasn't picked up the heartbeat cron entry yet.</span> <form method="post" action="<?= $FL_EP ?>" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></div>
 <?php endif; ?>
-<div id="qr"></div>
-<script>new QRCode(document.getElementById("qr"), {text: <?= json_encode(flotilla_pair_url($cfg)) ?>, width: 240, height: 240});</script>
-<p>Manual code:</p><textarea readonly rows="3" style="width:100%"><?= htmlspecialchars(flotilla_pair_url($cfg)) ?></textarea>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php" style="margin-top:12px"><input type="hidden" name="flotilla_action" value="test"><?= $csrfField ?><button type="submit">Send test notification</button></form>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php"><input type="hidden" name="flotilla_action" value="save"><?= $csrfField ?>
-  <h4>Filters</h4>
-  <label>Minimum importance:
-  <select name="LEVEL_MIN">
-    <option value="normal"  <?= $cfg['LEVEL_MIN'] === 'normal'  ? 'selected' : '' ?>>All (notices too)</option>
-    <option value="warning" <?= $cfg['LEVEL_MIN'] === 'warning' ? 'selected' : '' ?>>Warnings & alerts</option>
-    <option value="alert"   <?= $cfg['LEVEL_MIN'] === 'alert'   ? 'selected' : '' ?>>Alerts only</option>
-  </select></label><br>
-  <label><input type="checkbox" name="CAT_DISKS" value="yes" <?= $cfg['CAT_DISKS'] === 'yes' ? 'checked' : '' ?>> Disk events (temperature, SMART, utilization)</label><br>
-  <label><input type="checkbox" name="CAT_ARRAY" value="yes" <?= $cfg['CAT_ARRAY'] === 'yes' ? 'checked' : '' ?>> Array & parity events</label><br>
-  <label><input type="checkbox" name="CAT_OTHER" value="yes" <?= $cfg['CAT_OTHER'] === 'yes' ? 'checked' : '' ?>> Everything else (plugins, status reports)</label><br>
-  <h4>Advanced</h4>
-  <label>Relay URL: <input type="text" name="RELAY" value="<?= htmlspecialchars($cfg['RELAY']) ?>" style="width:100%"></label>
-  <?php if (flotilla_relay_insecure($cfg['RELAY'])): ?>
-  <p style="color:orange"><b>Not encrypted in transit:</b> this relay URL isn't <code>https</code> and isn't on your local network, so the authentication secret this server sends with every heartbeat travels in the clear. Your alert <i>contents</i> are still end-to-end encrypted. Use <code>https</code> unless the relay is on your LAN.</p>
-  <?php endif; ?>
-  <p style="opacity:.7">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at their own deployment.</p>
-  <button type="submit">Save</button>
+<form method="post" action="<?= $FL_EP ?>" style="margin-top:10px"><input type="hidden" name="flotilla_action" value="test"><?= $csrfField ?><button type="submit">Send test notification</button></form>
+</div>
+<form method="post" action="<?= $FL_EP ?>"><input type="hidden" name="flotilla_action" value="save"><?= $csrfField ?>
+<div class="fl-card">
+<h4>Filters</h4>
+<label>Minimum importance:
+<select name="LEVEL_MIN">
+<option value="normal"  <?= $cfg['LEVEL_MIN'] === 'normal'  ? 'selected' : '' ?>>All (notices too)</option>
+<option value="warning" <?= $cfg['LEVEL_MIN'] === 'warning' ? 'selected' : '' ?>>Warnings &amp; alerts</option>
+<option value="alert"   <?= $cfg['LEVEL_MIN'] === 'alert'   ? 'selected' : '' ?>>Alerts only</option>
+</select></label>
+<label><input type="checkbox" name="CAT_DISKS" value="yes" <?= $cfg['CAT_DISKS'] === 'yes' ? 'checked' : '' ?>> Disk events (temperature, SMART, utilization)</label>
+<label><input type="checkbox" name="CAT_ARRAY" value="yes" <?= $cfg['CAT_ARRAY'] === 'yes' ? 'checked' : '' ?>> Array &amp; parity events</label>
+<label><input type="checkbox" name="CAT_OTHER" value="yes" <?= $cfg['CAT_OTHER'] === 'yes' ? 'checked' : '' ?>> Everything else (plugins, status reports)</label>
+</div>
+<div class="fl-card">
+<h4>Advanced</h4>
+<label class="fl-field">Relay URL: <input type="text" name="RELAY" value="<?= htmlspecialchars($cfg['RELAY']) ?>"></label>
+<?php if (flotilla_relay_insecure($cfg['RELAY'])): ?>
+<div class="fl-warn"><b>Not encrypted in transit:</b> this relay URL isn't <code>https</code> and isn't on your local network, so the authentication secret this server sends with every heartbeat travels in the clear. Your alert <i>contents</i> are still end-to-end encrypted. Use <code>https</code> unless the relay is on your LAN.</div>
+<?php endif; ?>
+<p class="fl-muted">The relay forwards encrypted payloads it cannot read. Self-hosters can point this at their own deployment.</p>
+<button type="submit">Save</button>
+</div>
 </form>
-<form method="post" action="/plugins/flotilla-agent/include/settings.php" onsubmit="return confirm('Reset pairing? All paired devices stop receiving pushes until they re-scan.')">
-  <input type="hidden" name="flotilla_action" value="reset"><?= $csrfField ?><button type="submit" style="color:red">Reset pairing</button></form>
+<div class="fl-card fl-danger">
+<div class="fl-spread">
+<span class="fl-muted">Unpair every device and revoke this server's push credentials.</span>
+<form method="post" action="<?= $FL_EP ?>" onsubmit="return confirm('Reset pairing? All paired devices stop receiving pushes until they re-scan.')" style="margin:0">
+<input type="hidden" name="flotilla_action" value="reset"><?= $csrfField ?><button type="submit" style="color:#e74c3c">Reset pairing</button></form>
+</div>
+</div>
 <?php endif; ?>
 </div>

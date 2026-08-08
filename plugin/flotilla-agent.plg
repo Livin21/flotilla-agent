@@ -30,7 +30,7 @@
 -->
 <FILE Name="&pkg;">
   <URL>https://github.com/Livin21/flotilla-agent/releases/download/&version;/&name;-&version;.txz</URL>
-  <MD5>85be837ce341aeac0266682c26de5733</MD5>
+  <MD5>79efe9f9b7907a2676158f9e7b709530</MD5>
 </FILE>
 
 <FILE Run="/bin/bash" Method="install">
