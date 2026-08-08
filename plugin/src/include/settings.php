@@ -487,9 +487,23 @@ if ($flotillaIsDirect && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 if ($flotillaIsDirect && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-  // C1: reject any POST whose csrf_token doesn't match this session's real token. No state
-  // change on mismatch -- just redirect, same as every other unhandled action.
-  if (!flotilla_csrf_check($_POST['csrf_token'] ?? null)) { header('Location: /Settings/FlotillaAgent'); exit; }
+  // C1, corrected after live debugging: Unraid ENFORCES CSRF GLOBALLY. Its php auto_prepend
+  // (/usr/local/emhttp/webGui/include/local_prepend.php) runs before any script on EVERY POST,
+  // validates csrf_token with hash_equals against state/var.ini, terminates the request outright
+  // on a missing or wrong token (csrf_terminate -> exit), and then unset()s it from $_POST.
+  //
+  // Two consequences, both proven on a live box:
+  //   1. A POST that reaches this code under the webGUI is CSRF-clean BY CONSTRUCTION -- forged
+  //      or token-less POSTs die in the prepend before any plugin code runs.
+  //   2. $_POST['csrf_token'] is ALWAYS ABSENT here under the webGUI (the raw request body
+  //      contained the token twice; $_POST had none). An unconditional local check therefore
+  //      fails on every legitimate submission -- which is exactly how the pair button silently
+  //      did nothing: check failed -> redirect -> page unchanged.
+  //
+  // So: validate locally ONLY when the token is still visible, i.e. when the prepend did not
+  // handle this request (the CLI test harness; no prepend outside Unraid). Token present but
+  // wrong still rejects. Token absent means the framework already validated it.
+  if (isset($_POST['csrf_token']) && !flotilla_csrf_check($_POST['csrf_token'])) { header('Location: /Settings/FlotillaAgent'); exit; }
 
   $cfg = flotilla_read_cfg();
   $errs = [];

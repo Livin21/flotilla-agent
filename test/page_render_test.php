@@ -203,7 +203,18 @@ write_cfg($cfgPath);
 [$rc, $out] = run_direct(['flotilla_action' => 'pair', 'csrf_token' => 'nope']);
 assert($rc === 0, "direct pair with a bad token must exit cleanly: $out");
 assert(strpos(file_get_contents($cfgPath), 'PAIRING_ID=""') !== false, 'a bad token must change nothing');
-echo "page_render: the direct endpoint executes actions, CSRF still enforced\n";
+// NO token at all -> must EXECUTE. This is the emhttp contract discovered live: Unraid's
+// auto_prepend (local_prepend.php) validates csrf_token on every webGUI POST, terminates the
+// request on missing/wrong, and unset()s the token from $_POST -- so under the webGUI a POST
+// reaching our handler is CSRF-clean by construction and NEVER carries the token. A handler
+// that requires the token therefore rejects every legitimate submission (the silent
+// pair-button no-op). Token-less execution here mirrors a prepend-validated request.
+write_cfg($cfgPath);
+[$rc, $out] = run_direct(['flotilla_action' => 'pair']);
+assert($rc === 0, "prepend-validated (token-less) pair must exit cleanly: $out");
+assert(strpos(file_get_contents($cfgPath), 'PAIRING_ID=""') === false,
+       'a token-less POST (already validated+stripped by Unraid\'s prepend) must execute');
+echo "page_render: the direct endpoint executes actions, CSRF enforced only when the token is visible\n";
 
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);
