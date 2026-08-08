@@ -9,6 +9,7 @@
 <!ENTITY agentsDir "/boot/config/plugins/dynamix/notifications/agents">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" min="7.0.0"
+        pluginURL="https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg"
         support="https://livinmathew.com/flotilla/push">
 <CHANGES>Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.</CHANGES>
 
