@@ -1,106 +1,103 @@
-# Unraid forum support thread — draft
+# Unraid forum support thread
 
-Post to **Unraid forums → Plugin Support** (this becomes the `<Support>` URL in the CA
-submission, so it must exist before submitting to Community Applications).
+**Posted 2026-08-13** as topic **200208**, by `livin21`:
+https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/
 
----
+Written in ASD-STE-100 (Simplified Technical English): short active sentences, simple present
+tense, one idea per sentence, no idioms. Keep replies in the same register.
+
+## Forum mechanics learned while posting
+
+- **A new account cannot create topics in Plugin Support (forum 61).** There is no "Start new
+  topic" button there. Plugin threads are created in **Plugin System (forum 60)** and a moderator
+  moves them across — the same thing happened to the "Claude Code Remote Control" plugin thread.
+- **New accounts are moderated.** The topic is held with "This content requires moderator approval
+  before it's displayed publicly" until a moderator releases it.
+- **There is a daily post limit for new accounts** — "You have reached the maximum number of posts
+  you can make per day" appeared immediately after the first post. Budget replies accordingly for
+  the first few days; answering questions in the thread is part of the launch plan's active posture
+  and the limit will throttle it.
 
 ## Title
 
 ```
-[Plugin] Flotilla Agent — end-to-end encrypted push notifications for Unraid
+[Plugin] Flotilla Agent - encrypted push notifications for Unraid
 ```
 
----
+## Body as posted
 
-## Body
+Flotilla Agent sends the notifications from your Unraid server to your iPhone. The plugin has an MIT license. All of the server code is public on GitHub.
 
-I got tired of finding out about a disk error the next time I happened to open the web UI, so I
-wrote a plugin that forwards Unraid's notifications to my phone. It's MIT licensed and the whole
-server side is on GitHub.
+FUNCTION
 
-**What it does**
+The plugin installs as an Unraid notify agent. It does not add its own monitor function. It sends the notifications that Unraid makes. These include parity checks, disk errors, SMART warnings and array events. Your User Scripts can also send notifications with the notify command.
 
-It registers as an Unraid *notify agent*, which means it doesn't invent its own monitoring — it
-picks up whatever already raises a notification. Parity checks, disk errors, SMART warnings, array
-start/stop, and anything your own User Scripts send with `notify` all come through. It also sends a
-heartbeat, so your phone can tell the difference between "nothing is wrong" and "the server is
-off the internet" — a silent server and a healthy server look identical otherwise.
+The plugin sends a heartbeat signal at regular intervals. Then your phone can show the difference between a correct server and a server that is not on the network.
 
-Settings page lands under **Settings → Flotilla Agent**. Pairing is a QR code.
+The settings page is at Settings > Flotilla Agent. You pair the phone with a QR code.
 
-**What it can and can't see**
+SECURITY
 
-This is the part I'd want to know about before installing something that runs as root, so:
+The plugin operates as the root user. Read this section before you install it.
 
-Event content is sealed with ChaCha20-Poly1305 **on your server, before anything leaves your LAN**.
-The key lives in exactly two places — your server's config file and the paired phone's Keychain. It
-is never sent to the relay, never in the QR beyond the initial pairing, never in a log. The relay
-that forwards the push to Apple sees ciphertext and a pairing ID; it cannot read your notification
-text, and neither can Apple. Your Unraid API key, hostname, and other server-local secrets are
-never transmitted at all.
+The plugin encrypts the content of each event on your server with ChaCha20-Poly1305. The encryption occurs before the data goes out of your local network. The key is in two locations only: the configuration file on your server, and the keychain on the paired phone. The plugin does not send the key to the relay. The plugin does not write the key to a log file.
 
-The relay is open source too: https://github.com/Livin21/flotilla-relay — and the wire format both
-sides agree on is written down in PROTOCOL.md, so you can check the claim rather than take my word
-for it.
+The relay sends the push message to Apple. The relay receives ciphertext and a pairing identifier. The relay cannot read the text of your notifications. Apple also cannot read the text.
 
-**Being upfront about the money**
+The plugin does not send your Unraid API key, your host name, or other local secrets.
 
-The plugin is free, MIT, and useful on its own terms. Push delivery goes to **Flotilla**, my iOS app
-for Unraid and Proxmox, and the push feature sits behind its one-time $4.99 Pro unlock. I'd rather
-say that in the fourth paragraph than have you find out after installing.
+The relay code is also public. The file PROTOCOL.md gives the data format. You can examine the code and make sure that these statements are correct.
 
-I'm not asking anyone to buy anything here — the reason this plugin is open source and standalone is
-that I think the server side of a thing like this should be inspectable regardless of what the client
-costs.
+COST
 
-**Requirements**
+The plugin is free and open source.
 
-- Unraid 7.0 or newer
-- An iPhone running Flotilla, paired via QR
+The push messages go to Flotilla. Flotilla is my iOS app for Unraid and Proxmox. The push function needs the Pro option in that app. The Pro option costs USD 4.99 one time.
 
-**Install**
+I give you this information now, and not after you install the plugin.
 
-Community Applications (pending review), or paste the plugin URL into **Plugins → Install Plugin**:
+REQUIREMENTS
 
-```
+Unraid 7.0 or later
+An iPhone with the Flotilla app
+
+INSTALLATION
+
+The Community Applications review is not complete. Until it is complete, put this URL in Plugins > Install Plugin:
+
 https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg
-```
 
-**Source**
+SOURCE CODE
 
-- Plugin + Proxmox beacon + encryption CLI: https://github.com/Livin21/flotilla-agent
-- Relay (Cloudflare Worker): https://github.com/Livin21/flotilla-relay
-- Protocol: PROTOCOL.md in the agent repo
+Plugin, Proxmox beacon and encryption tool: https://github.com/Livin21/flotilla-agent
+Relay: https://github.com/Livin21/flotilla-relay
 
-**Known limits**
+LIMITS
 
-- iOS only. There is no Android client and I'm not writing one.
-- The relay is operated by me. It's stateless and holds no plaintext, but it is a dependency —
-  if that's disqualifying for you, that's a fair call and I'd rather you knew now.
-- Uninstall removes the notify agent, the cron entry and the config directory.
+The app operates on iOS only. There is no Android app.
+I operate the relay. The relay keeps no data and reads no plaintext. But it is a dependency.
+When you remove the plugin, it also removes the notify agent, the cron entry and the configuration directory.
 
-Happy to answer anything, and bug reports are very welcome — this is new and I'd rather hear about a
-rough edge than have someone quietly uninstall it.
+Send your questions and your problem reports to this topic. The plugin is new. I want to know about the problems that you find.
 
 ---
 
 ## Notes for the CA submission (not part of the post)
 
-**Expect the "why isn't this a Docker container?" question.** CA policy explicitly excludes plugins
-better suited as containers, and it is the most likely reason for a bounce. The answer is concrete:
+**Expect the "why is this not a Docker container?" question.** CA policy excludes plugins that are
+better suited as containers, and it is the most probable cause of a rejection. Three concrete
+answers:
 
-- It registers a **notify agent** in `/boot/config/plugins/dynamix/notifications/agents`. A container
-  cannot install itself into Unraid's notification system — that path is read by emhttp on the host.
-- It adds a **Settings page** (`.page` file under `/usr/local/emhttp/plugins/`). Containers cannot
-  add pages to the Unraid web UI.
-- It must survive an **array stop**, since a "server going down" alert is worthless if it dies with
-  the array. Docker itself stops when the array does.
-
-Lead with those three if asked; none of them is a preference argument.
+- The plugin registers a **notify agent** in `/boot/config/plugins/dynamix/notifications/agents`.
+  emhttp reads that path on the host. A container cannot install itself there.
+- The plugin adds a **Settings page** (a `.page` file under `/usr/local/emhttp/plugins/`).
+  A container cannot add a page to the Unraid web interface.
+- The plugin must continue to operate when the array stops. An alert that says "the server stops
+  now" has no value if it stops with the array. Docker stops when the array stops.
 
 **Order of operations**
 
-1. Post this thread → copy its URL.
-2. Paste that URL into `<Support>` in `ca/flotilla-agent.xml`, commit, push.
-3. Submit the repo through the CA form (plugins are manually reviewed; allow up to 48h).
+1. Post the support thread. DONE — topic 200208, 2026-08-13.
+2. Wait for moderator approval. CA checks the support link, so the topic must be publicly visible.
+3. Push this repo, so the `<Icon>` URL resolves.
+4. Submit the repository through the CA form. Plugins are reviewed by hand; allow up to 48 hours.
