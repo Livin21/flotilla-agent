@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Community Applications repository XML for the Flotilla Agent plugin.
+
+  Format per https://ca.unraid.net/submit/help/repository-xml.
+  Submit this repository through the CA submission form (plugins are manually reviewed);
+  it is NOT a pull request against a template repo.
+
+  BEFORE SUBMITTING: <Support> must point at the real forum topic. Post the support thread
+  first, then paste its URL here — CA requires a working support link, and a placeholder is
+  an automatic bounce.
+-->
+<Plugin>
+  <Name>Flotilla Agent</Name>
+  <PluginURL>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg</PluginURL>
+  <Support>https://forums.unraid.net/topic/REPLACE-WITH-SUPPORT-TOPIC</Support>
+  <Project>https://github.com/Livin21/flotilla-agent</Project>
+  <Icon>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/ca/flotilla-agent.png</Icon>
+  <Category>Tools:Utilities Network:Management</Category>
+  <Overview>
+    Forwards your Unraid notifications to your iPhone as push notifications, end-to-end encrypted.
+
+    The agent hooks Unraid's own notification system as a notify agent, so anything that already
+    raises a notification — parity checks, disk errors, SMART warnings, array events, your own
+    User Scripts calling `notify` — is delivered to your phone. It adds a settings page under
+    Settings for pairing and configuration, and a heartbeat so your phone can tell the difference
+    between "nothing is wrong" and "the server is gone".
+
+    Event content is sealed with ChaCha20-Poly1305 on your server before it leaves your LAN. The
+    encryption key exists in exactly two places: this server's config file and the paired phone's
+    Keychain. The relay that forwards the push cannot read your notifications — it only ever sees
+    ciphertext — and neither can Apple. Your Unraid API key, hostname and other server-local
+    secrets are never sent anywhere.
+
+    MIT licensed. No runtime dependencies beyond what Unraid already ships (bash, curl, jq); the
+    plugin itself is plain PHP and bash. Uninstalling removes the notify agent, the cron entry and
+    the config directory.
+
+    The companion iOS app (Flotilla) is a separate, optional paid app — the plugin is free and open
+    source, and this repo is everything that runs on your server.
+  </Overview>
+</Plugin>
