@@ -6,14 +6,15 @@
   Submit this repository through the CA submission form (plugins are manually reviewed);
   it is NOT a pull request against a template repo.
 
-  BEFORE SUBMITTING: <Support> must point at the real forum topic. Post the support thread
-  first, then paste its URL here — CA requires a working support link, and a placeholder is
-  an automatic bounce.
+  Support thread posted 2026-08-13 (topic 200208), in Plugin System — a new account cannot create
+  topics in Plugin Support, so a moderator moves plugin threads across. The topic is held for
+  moderator approval; confirm it is publicly visible before submitting to CA, because CA checks
+  the support link.
 -->
 <Plugin>
   <Name>Flotilla Agent</Name>
   <PluginURL>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg</PluginURL>
-  <Support>https://forums.unraid.net/topic/REPLACE-WITH-SUPPORT-TOPIC</Support>
+  <Support>https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/</Support>
   <Project>https://github.com/Livin21/flotilla-agent</Project>
   <Icon>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/ca/flotilla-agent.png</Icon>
   <Category>Tools:Utilities Network:Management</Category>
