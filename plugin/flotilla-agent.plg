@@ -10,7 +10,7 @@
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" min="7.0.0"
         pluginURL="https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg"
-        support="https://livinmathew.com/flotilla/push">
+        support="https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/">
 <CHANGES>Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.</CHANGES>
 
 <!--

@@ -1,0 +1,44 @@
+<Plugin>
+  <Name>Flotilla Agent</Name>
+
+  <Overview>
+Flotilla Agent sends the notifications from your Unraid server to your iPhone.
+
+The plugin installs as an Unraid notify agent. It does not add its own monitor function. It sends
+the notifications that Unraid makes. These include parity checks, disk errors, SMART warnings and
+array events. Your User Scripts can also send notifications with the notify command. The plugin
+sends a heartbeat signal at regular intervals. Then your phone can show the difference between a
+correct server and a server that is not on the network.
+
+The plugin encrypts the content of each event on your server with ChaCha20-Poly1305. The encryption
+occurs before the data goes out of your local network. The key is in two locations only: the
+configuration file on your server, and the keychain on the paired phone. The relay that sends the
+push message receives ciphertext only. The relay cannot read the text of your notifications. The
+plugin does not send your Unraid API key, your host name, or other local secrets.
+
+The plugin is free and open source. The push messages go to Flotilla, an iOS app for Unraid and
+Proxmox. The push function needs the Pro option in that app, which costs USD 4.99 one time.
+
+The settings page is at Settings, then Flotilla Agent. You pair the phone with a QR code.
+  </Overview>
+
+  <!-- Must match the pluginURL attribute in flotilla-agent.plg exactly. -->
+  <PluginURL>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg</PluginURL>
+
+  <PluginAuthor>Livin Mathew (livin21)</PluginAuthor>
+
+  <!-- The .plg carries a support attribute, so CA uses that and ignores this element.
+       Both point at the same forum topic, so the two cannot disagree. -->
+  <Support>https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/</Support>
+
+  <Project>https://github.com/Livin21/flotilla-agent</Project>
+  <ReadMe>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/README.md</ReadMe>
+
+  <Category>Tools:Utilities</Category>
+
+  <!-- The .plg sets min="7.0.0", so CA uses that and ignores MinVer here. -->
+
+  <Icon>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/icon.png</Icon>
+
+  <License>MIT</License>
+</Plugin>

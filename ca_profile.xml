@@ -1,0 +1,17 @@
+<CommunityApplications>
+  <Profile>
+Server-side software for Flotilla Push. Flotilla is an iOS app for Unraid and Proxmox VE servers.
+
+This repository contains the Unraid plugin, a companion daemon for Proxmox VE, and the encryption
+tool that both of them use. All of the code is public and has an MIT license.
+
+The plugin sends the notifications from your server to your phone. It encrypts the content of each
+event on the server, before the data goes out of your local network. The relay that sends the push
+message cannot read your notifications.
+
+Use the support topic on the Unraid forums for questions and problem reports.
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/Livin21/flotilla-agent/main/icon.png</Icon>
+  <WebPage>https://github.com/Livin21/flotilla-agent</WebPage>
+  <Forum>https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/</Forum>
+</CommunityApplications>

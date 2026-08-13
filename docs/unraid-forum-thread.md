@@ -99,5 +99,5 @@ answers:
 
 1. Post the support thread. DONE — topic 200208, 2026-08-13.
 2. Wait for moderator approval. CA checks the support link, so the topic must be publicly visible.
-3. Push this repo, so the `<Icon>` URL resolves.
+3. Push this repo, so the `<Icon>` and `README` URLs resolve.
 4. Submit the repository through the CA form. Plugins are reviewed by hand; allow up to 48 hours.
