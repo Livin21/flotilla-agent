@@ -1,0 +1,2 @@
+ID# ATTRIBUTE_NAME          FLAG     VALUE WORST THRESH TYPE      UPDATED  WHEN_FAILED RAW_VALUE
+193 Load_Cycle_Count        0x0032   100   100   000    Old_age   Always       -       4000

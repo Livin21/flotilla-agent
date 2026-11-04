@@ -1,0 +1,2 @@
+# Generated mover schedule:
+35 3 * * * /usr/local/sbin/mover start > /dev/null 2> >(logger -t move)
