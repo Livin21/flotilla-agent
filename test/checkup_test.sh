@@ -6,8 +6,12 @@ FAIL=0; t() { if "$@"; then echo "ok: $NAME"; else echo "FAIL: $NAME"; FAIL=1; f
 SCRIPT="$ROOT/plugin/src/scripts/checkup.sh"
 FX="$ROOT/test/fixtures/checkup"
 
+TMPDIRS=()
+cleanup() { local d; for d in ${TMPDIRS[@]+"${TMPDIRS[@]}"}; do chmod -R u+rwX "$d" 2>/dev/null; rm -rf "$d"; done; }
+trap cleanup EXIT
 new_dir() {
   D=$(mktemp -d)
+  TMPDIRS[${#TMPDIRS[@]}]="$D"
   cp -R "$FX/base/." "$D/"
   cat > "$D/notify" <<'NEOF'
 #!/bin/bash
@@ -370,6 +374,56 @@ t_w1dry() {
   echo "$out" | grep -qF 'disk2: load cycle count is near or past the rated limit' || return 1
   no_log && [ ! -e "$D/boot" ]
 }; t t_w1dry
+
+NAME="zero-size pool is skipped"; new_dir
+t_f_zerosize() {
+  set_disk cache fsFree 0; set_disk cache fsSize 0
+  set_free disk1 190000000; set_free disk2 180000000; run_checkup "$D"
+  grep -qx 'Share nextcloud refuses new files' "$D/notify.log" || return 1
+  no_subject "Share appdata" && no_subject "Share my share" || return 1
+  [ -z "$(state_of F appdata)" ] || return 1
+  set_disk cache fsFree 96435547; set_disk cache fsSize ""; run_checkup "$D"
+  no_subject "Share appdata" && no_subject "Share my share"
+}; t t_f_zerosize
+
+NAME="non-digit floor is skipped"; new_dir
+t_f_badfloor() {
+  set_share appdata floor "20GB"; f1_pool
+  has_notice "Share my share refuses new files" "$F1_MYSHARE" alert || return 1
+  no_subject "Share appdata"
+}; t t_f_badfloor
+
+NAME="non-numeric SMART value is skipped"; new_dir
+t_w1nonnum() {
+  worn; sed -i.bak 's/ 001   001 / ---   001 /' "$D/var/local/emhttp/smart/disk2"
+  grep -q -- '---' "$D/var/local/emhttp/smart/disk2" || return 1
+  run_checkup "$D"; no_log
+}; t t_w1nonnum
+
+NAME="W1 boundary"; new_dir
+t_w1bound() {
+  worn; sed -i.bak 's/ 001   001 / 011   001 /' "$D/var/local/emhttp/smart/disk2"
+  run_checkup "$D"; no_log || return 1
+  sed -i.bak 's/ 011   001 / 010   001 /' "$D/var/local/emhttp/smart/disk2"
+  run_checkup "$D"; [ "$(log_count)" = 1 ]
+}; t t_w1bound
+
+NAME="W1 once when flash is read-only"; new_dir
+t_w1ro() {
+  worn; mkdir -p "$D/boot/config/plugins/flotilla-agent"; chmod 500 "$D/boot/config/plugins/flotilla-agent"
+  run_checkup "$D"; run_checkup "$D"; run_checkup "$D"
+  local n; n=$(log_count)
+  chmod 700 "$D/boot/config/plugins/flotilla-agent"
+  [ "$n" = 1 ]
+}; t t_w1ro
+
+NAME="W1 on a parity disk"; new_dir
+t_w1parity() {
+  worn parity; run_checkup "$D"
+  local want
+  want=$(printf '%s\n' -e "Flotilla SMART check" -s "parity: load cycle count is near or past the rated limit" -d 'Load_Cycle_Count on parity (ST2000VN003-3CW101) is 1215433. The drive reports a normalized value of 1. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. If this parity disk fails, the array has less protection until you replace it.' -i warning ---)
+  [ "$(cat "$D/notify.log")" = "$want" ] || { cat "$D/notify.log"; return 1; }
+}; t t_w1parity
 
 NAME="formats"
 t_fmt() (

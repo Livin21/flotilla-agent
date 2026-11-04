@@ -238,11 +238,13 @@ assert(strpos(file_get_contents($cfgPath), 'PAIRING_ID=""') === false,
 echo "page_render: the direct endpoint executes actions, CSRF enforced only when the token is visible\n";
 
 write_cfg($cfgPath);
+file_put_contents($cfgPath, preg_replace('/^RELAY=.*$/m', '', file_get_contents($cfgPath)) . "RELAY=\"https://relay.example.test\"\nCAT_OTHER=\"no\"\n");
 [$rc, $out] = run_direct(['flotilla_action' => 'save_checks', 'CHECKS' => 'no', 'csrf_token' => 'test-token-123']);
 assert($rc === 0, "direct save_checks must exit cleanly: $out");
 $after = file_get_contents($cfgPath);
 assert(strpos($after, 'CHECKS="no"') !== false, "save_checks must write CHECKS=no: $after");
-assert(strpos($after, 'RELAY="https://flotilla-push.livinmathew.com"') !== false, 'save_checks keeps RELAY');
+assert(strpos($after, 'RELAY="https://relay.example.test"') !== false, "save_checks keeps a non-default RELAY: $after");
+assert(strpos($after, 'CAT_OTHER="no"') !== false, "save_checks keeps CAT_OTHER: $after");
 echo "page_render: save_checks action writes only CHECKS\n";
 
 array_map('unlink', glob("$tmp/*") ?: []);

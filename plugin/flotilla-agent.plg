@@ -164,7 +164,7 @@ rm -rf /var/local/flotilla-agent
 rm -rf &emhttp;
 echo "flotilla-agent removed. The pairing was revoked at the relay and cleared from the flash config,"
 echo "so after a reinstall you must re-pair (Settings -&gt; Flotilla Agent -&gt; Pair) and re-scan the QR"
-echo "in the Flotilla app. Relay URL and filter settings were kept; delete &plgPath; to purge those too."
+echo "in the Flotilla app. Relay URL, filter settings and the server checks setting were kept; delete &plgPath; to purge those too."
 </INLINE>
 </FILE>
 </PLUGIN>

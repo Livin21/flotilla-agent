@@ -4,11 +4,11 @@
   <Overview>
 Flotilla Agent sends the notifications from your Unraid server to your iPhone.
 
-The plugin installs as an Unraid notify agent. It sends the
-notifications that Unraid makes. These include parity checks, disk errors, SMART warnings and array
-events. Your User Scripts can also send notifications with the notify command. The plugin sends a
-heartbeat signal at regular intervals. Then your phone can show the difference between a correct
-server and a server that is not on the network.
+The plugin installs as an Unraid notify agent. It sends the notifications that Unraid makes. These
+include parity checks, disk errors, SMART warnings and array events. Your User Scripts can also
+send notifications with the notify command. The plugin sends a heartbeat signal at regular
+intervals. Then your phone can show the difference between a correct server and a server that is
+not on the network.
 
 The plugin also runs three server checks: mover schedule, share free space, and disk load cycles. A
 problem creates an Unraid notification. The checks read only saved status files, and they do not

@@ -22,6 +22,8 @@ Each file is preceded by a `# Generated ...` comment line. The plugin then runs 
 
 Every line the plugin writes for the Mover Tuning schedule contains either `ca.mover.tuning` (7.2.1+ and force move) or `/usr/local/sbin/mover` (stock path, pre-7.2.1). The watchdog line also contains `ca.mover.tuning` but is not a mover schedule, so M1 would count it as "scheduled" if the watchdog is on and the real schedule is missing. Flag this as a known false negative for M1.
 
+Ruling (2026-11-04): the code matches `ca.mover.tuning/mover`, not bare `ca.mover.tuning`, so the watchdog line is not counted (see checkup.sh).
+
 **Syslog tag is `move`** (`logger -t move`), both in the cron lines and in `age_mover` (`mvlogger`, `mvDebuglogger`, watchdog).
 
 **Syslog lines by logging setting** (`age_mover` `mvlogger`: `LOGLEVEL` 1 = `logging="yes"`, 0 = `"no"`, 2 = file-only):

@@ -106,7 +106,7 @@ send() {
     return 0
   fi
   [ -x "$NOTIFY" ] || return 0
-  "$NOTIFY" -e "$1" -s "$2" -d "$3" -i "$4"
+  "$NOTIFY" -e "$1" -s "$2" -d "$3" -i "$4" 9>&- 3<&-
 }
 
 # M1: the mover has a schedule but cron has no mover job. Needs two runs in a row.
@@ -155,13 +155,14 @@ f_eval() {
       for (j = 1; j <= ns; j++) {
         s = sname[j]; uc = sh[s, "useCache"]; fl = sh[s, "floor"]
         if (sh[s, "exclusive"] == "yes" || sh[s, "cachePool2"] != "") continue
-        if (fl == "" || fl + 0 <= 0) continue
+        if (fl !~ /^[0-9]+$/ || fl + 0 <= 0) continue
         if (uc == "only") kind = "pool"; else if (uc == "no") kind = "array"
         else if (uc == "yes" || uc == "prefer") kind = "both"; else continue
         fl += 0; room = 0; locked = 1; margin = 0; pool = "-"; pfree = 0
         if (kind != "array") {
           pool = sh[s, "cachePool"]
-          if (!(pool in dsec) || d[pool, "fsFree"] == "") continue
+          if (!(pool in dsec)) continue
+          if (d[pool, "fsFree"] !~ /^[0-9]+$/ || d[pool, "fsSize"] !~ /^[0-9]+$/ || d[pool, "fsSize"] + 0 <= 0) continue
           pfree = d[pool, "fsFree"] + 0
           if (pfree > fl) { locked = 0; room += pfree - fl }
           margin = (d[pool, "fsSize"] + 0) * 1024 * 0.1
@@ -173,7 +174,8 @@ f_eval() {
           seen = ","; ne = 0; alllow = 1; big = 0
           for (c = 1; c <= n; c++) {
             x = cand[c]
-            if (x == "" || !(x in dsec) || d[x, "type"] != "Data" || d[x, "fsSize"] + 0 <= 0) continue
+            if (x == "" || !(x in dsec) || d[x, "type"] != "Data") continue
+            if (d[x, "fsSize"] !~ /^[0-9]+$/ || d[x, "fsFree"] !~ /^[0-9]+$/ || d[x, "fsSize"] + 0 <= 0) continue
             if (index("," exc ",", "," x ",") || index(seen, "," x ",")) continue
             seen = seen x ","; ne++
             f = d[x, "fsFree"] + 0
@@ -255,7 +257,7 @@ EOF
 check_w1() {
   [ -d "$SMART_DIR" ] && [ -r "$DISKS_INI" ] || return 0
   local wear="$ROOT/boot/config/plugins/flotilla-agent/wear.state"
-  local f name id line val raw model
+  local f name id line val raw model dtype tail
   for f in "$SMART_DIR"/*; do
     [ -f "$f" ] || continue
     name=${f##*/}
@@ -263,19 +265,24 @@ check_w1() {
     ini_sections "$DISKS_INI" | grep -qxF -- "$name" || continue
     id=$(ini_get "$DISKS_INI" "$name" id)
     [ -n "$id" ] || continue
-    line=$(awk '$1 == 193 { print $4 + 0, $10; exit }' "$f" 2>/dev/null)
+    line=$(awk '$1 == 193 { if ($4 ~ /^[0-9]+$/ && $10 ~ /^[0-9]+$/) print $4 + 0, $10; exit }' "$f" 2>/dev/null)
     [ -n "$line" ] || continue
     val=${line%% *}; raw=${line#* }
     awk -v v="$val" 'BEGIN { exit !(v <= 10) }' || continue
     if [ -z "$DRY" ]; then
       [ -r "$wear" ] && grep -qxF -- "$id" "$wear" && continue
+      [ -n "$(state_get W1 "$id")" ] && continue
     fi
     model=$(printf '%s' "${id%_*}" | tr '_' ' ')
+    dtype=$(ini_get "$DISKS_INI" "$name" type)
+    tail="Keep a current backup of the data on this disk."
+    [ "$dtype" = Parity ] && tail="If this parity disk fails, the array has less protection until you replace it."
     send "Flotilla SMART check" "$name: load cycle count is near or past the rated limit" \
-      "Load_Cycle_Count on $name ($model) is $raw. The drive reports a normalized value of $val. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. Keep a current backup of the data on this disk." \
+      "Load_Cycle_Count on $name ($model) is $raw. The drive reports a normalized value of $val. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. $tail" \
       warning
     if [ -z "$DRY" ]; then
-      mkdir -p "${wear%/*}" 2>/dev/null && printf '%s\n' "$id" >> "$wear"
+      state_set W1 "$id" sent
+      mkdir -p "${wear%/*}" 2>/dev/null && { printf '%s\n' "$id" >> "$wear"; } 2>/dev/null
     fi
   done
 }
