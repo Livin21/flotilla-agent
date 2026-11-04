@@ -135,6 +135,121 @@ check_m1() {
   fi
 }
 
+# f_eval: one line per checked share, from disks.ini and shares.ini (raw KiB in, bytes out):
+# name kind pool locked close above1g pastmargin left floorKiB floorBytes poolFreeBytes
+# kind is pool (only), array (no) or both (yes, prefer). Flags are 0 or 1. No field is empty.
+f_eval() {
+  awk -v which=1 '
+    function unq(v) { sub(/\r$/, "", v); if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2); return v }
+    /^\["/ {
+      s = $0; sub(/^\["/, "", s); sub(/"\].*$/, "", s); cur = s
+      if (which == 1) { nd++; dname[nd] = s; dsec[s] = 1 } else { ns++; sname[ns] = s }
+      next
+    }
+    {
+      i = index($0, "="); if (i == 0) next
+      k = substr($0, 1, i - 1); v = unq(substr($0, i + 1))
+      if (which == 1) d[cur, k] = v; else sh[cur, k] = v
+    }
+    END {
+      for (j = 1; j <= ns; j++) {
+        s = sname[j]; uc = sh[s, "useCache"]; fl = sh[s, "floor"]
+        if (sh[s, "exclusive"] == "yes" || sh[s, "cachePool2"] != "") continue
+        if (fl == "" || fl + 0 <= 0) continue
+        if (uc == "only") kind = "pool"; else if (uc == "no") kind = "array"
+        else if (uc == "yes" || uc == "prefer") kind = "both"; else continue
+        fl += 0; room = 0; locked = 1; margin = 0; pool = "-"; pfree = 0
+        if (kind != "array") {
+          pool = sh[s, "cachePool"]
+          if (!(pool in dsec) || d[pool, "fsFree"] == "") continue
+          pfree = d[pool, "fsFree"] + 0
+          if (pfree > fl) { locked = 0; room += pfree - fl }
+          margin = (d[pool, "fsSize"] + 0) * 1024 * 0.1
+        }
+        if (kind != "pool") {
+          inc = sh[s, "include"]; exc = sh[s, "exclude"]; gsub(/ /, "", inc); gsub(/ /, "", exc)
+          if (inc != "") n = split(inc, cand, ",")
+          else { n = nd; for (c = 1; c <= nd; c++) cand[c] = dname[c] }
+          seen = ","; ne = 0; alllow = 1; big = 0
+          for (c = 1; c <= n; c++) {
+            x = cand[c]
+            if (x == "" || !(x in dsec) || d[x, "type"] != "Data" || d[x, "fsSize"] + 0 <= 0) continue
+            if (index("," exc ",", "," x ",") || index(seen, "," x ",")) continue
+            seen = seen x ","; ne++
+            f = d[x, "fsFree"] + 0
+            if (f > fl) { alllow = 0; room += f - fl }
+            if (d[x, "fsSize"] + 0 > big) big = d[x, "fsSize"] + 0
+          }
+          if (ne == 0) continue
+          if (!alllow) locked = 0
+          if (kind == "array") { locked = alllow; margin = big * 1024 * 0.1 }
+        }
+        if (margin > 50e9) margin = 50e9
+        left = room * 1024
+        printf "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.0f\t%.0f\t%.0f\t%.0f\n", s, kind, pool, locked,
+          (!locked && left < margin), (left >= 1e9), (left > margin + 5e9), left, fl, fl * 1024, pfree * 1024
+      }
+    }' "$DISKS_INI" which=2 "$SHARES_INI"
+}
+
+# f_notice ID: send F1, F1clear or F2 for the share fields set by check_f
+f_notice() {
+  local fs uf sub desc imp
+  fs=$(size_text "$fb"); uf=$(unraid_floor_text "$floor")
+  case "$1" in
+    F1)
+      sub="Share $name refuses new files"; imp=alert
+      case "$kind" in
+        pool) desc="Free space on $pool is $(size_text "$pfree"). The Minimum free space for $name is $fs. Unraid shows this value as $uf. Unraid does not create new files in $name. To correct this, make free space on $pool, or decrease Minimum free space in Shares > $name." ;;
+        array) desc="Each disk that $name can use has less free space than the Minimum free space for $name ($fs). Unraid shows this value as $uf. Unraid does not create new files in $name. To correct this, make free space on one of these disks, or decrease Minimum free space in Shares > $name." ;;
+        *) desc="Free space on $pool and on each disk that $name can use is less than the Minimum free space for $name ($fs). Unraid shows this value as $uf. Unraid does not create new files in $name. To correct this, make free space on $pool or on one of these disks, or decrease Minimum free space in Shares > $name." ;;
+      esac ;;
+    F1clear)
+      sub="Share $name accepts new files"; imp=normal
+      desc="Free space is more than the Minimum free space for $name again." ;;
+    F2)
+      sub="Share $name is near its Minimum free space"; imp=warning
+      case "$kind" in
+        pool) desc="Free space on $pool is $(size_text "$pfree"). The Minimum free space for $name is $fs. Unraid shows this value as $uf. When free space on $pool is $fs or less, Unraid does not create new files in $name." ;;
+        array) desc="The disks that $name can use have $(left_text "$left") of free space above the Minimum free space for $name ($fs). Unraid shows this value as $uf. When this space is full, Unraid does not create new files in $name." ;;
+        *) desc="$(cap_first "$pool") and the disks that $name can use have $(left_text "$left") of free space above the Minimum free space for $name ($fs). Unraid shows this value as $uf. When this space is full, Unraid does not create new files in $name." ;;
+      esac ;;
+  esac
+  send "Flotilla checkup" "$sub" "$desc" "$imp"
+}
+
+# F1 / F2: a share refuses new files (locked) or is near it (close). State F per share: ok (no line), close, locked.
+# A dry run sees no saved state, so it reports F1 and F2 for the current conditions and never a clear.
+check_f() {
+  [ -r "$VAR_INI" ] && [ -r "$SHARES_INI" ] && [ -r "$DISKS_INI" ] || return 0
+  [ "$(ini_get "$VAR_INI" "" mdState)" = "STARTED" ] || return 0
+  local out name kind pool locked close above1g pastmargin left floor fb pfree prev new
+  out=$(f_eval)
+  [ -n "$out" ] || return 0
+  while IFS="$TAB" read -r name kind pool locked close above1g pastmargin left floor fb pfree <&3; do
+    prev=$(state_get F "$name"); [ -n "$prev" ] || prev=ok
+    if [ "$locked" = 1 ]; then
+      new=locked
+      [ "$prev" = locked ] || f_notice F1
+    elif [ "$prev" = locked ]; then
+      new=locked
+      if [ "$above1g" = 1 ]; then
+        f_notice F1clear
+        if [ "$close" = 1 ]; then new=close; else new=ok; fi
+      fi
+    elif [ "$prev" = close ]; then
+      if [ "$pastmargin" = 1 ]; then new=ok; else new=close; fi
+    else
+      new=ok
+      [ "$close" = 1 ] && { f_notice F2; new=close; }
+    fi
+    [ "$new" = "$prev" ] && continue
+    if [ "$new" = ok ]; then state_clear F "$name"; else state_set F "$name" "$new"; fi
+  done 3<<EOF
+$out
+EOF
+}
+
 main() {
   [ -r "$CFG" ] && . "$CFG"
   [ "${CHECKS:-yes}" = "no" ] && exit 0
@@ -146,6 +261,7 @@ main() {
     fi
   fi
   check_m1
+  check_f
   exit 0
 }
 
