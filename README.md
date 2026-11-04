@@ -12,6 +12,11 @@ Three components, one job each:
 - **The Unraid plugin** (`plugin/`) — hooks into Unraid's own notification
   system (`notify` agent) and a heartbeat cron job, and adds a settings page
   under Unraid's Settings tab for pairing and configuration.
+
+  The plugin also runs three server checks: mover schedule, share free space,
+  and disk load cycles. A problem creates an Unraid notification. The checks
+  read only saved status files, and they do not wake disks. To stop the
+  checks, set Run server checks to No.
 - **`flotilla-beacon`** (`cmd/flotilla-beacon`) — the equivalent for Proxmox
   VE: a small daemon that receives Proxmox's native webhook locally and
   forwards it, since Proxmox has no plugin system to hook into directly.
@@ -149,7 +154,8 @@ repo's README.)
 ```bash
 go build ./...
 go test ./...                 # cmd/flotilla-seal, cmd/flotilla-beacon, internal/sealbox
-php test/*.php                # settings.php unit tests (CSRF, cfg escaping, entity fixup, ...)
+for f in test/*.php; do php -d zend.assertions=1 "$f" || echo "FAIL $f"; done  # settings.php unit tests
+bash test/checkup_test.sh     # server checks
 bash test/agent_test.sh       # send-event.sh/heartbeat.sh/revoke.sh against a local capture relay
 bash plugin/build.sh <version> # rebuilds plugin/flotilla-agent-<version>.txz from plugin/src
 ```

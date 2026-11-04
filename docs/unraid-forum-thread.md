@@ -30,9 +30,11 @@ Flotilla Agent sends the notifications from your Unraid server to your iPhone. T
 
 FUNCTION
 
-The plugin installs as an Unraid notify agent. It does not add its own monitor function. It sends the notifications that Unraid makes. These include parity checks, disk errors, SMART warnings and array events. Your User Scripts can also send notifications with the notify command.
+The plugin installs as an Unraid notify agent. It sends the notifications that Unraid makes. These include parity checks, disk errors, SMART warnings and array events. Your User Scripts can also send notifications with the notify command.
 
 The plugin sends a heartbeat signal at regular intervals. Then your phone can show the difference between a correct server and a server that is not on the network.
+
+The plugin also runs three server checks: mover schedule, share free space, and disk load cycles. A problem creates an Unraid notification. The checks read only saved status files, and they do not wake disks. To stop the checks, set Run server checks to No.
 
 The settings page is at Settings > Flotilla Agent. You pair the phone with a QR code.
 
@@ -63,7 +65,7 @@ An iPhone with the Flotilla app
 
 INSTALLATION
 
-The Community Applications review is not complete. Until it is complete, put this URL in Plugins > Install Plugin:
+Install the plugin from Community Applications. Search for Flotilla Agent. You can also put this URL in Plugins > Install Plugin:
 
 https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg
 
@@ -76,7 +78,7 @@ LIMITS
 
 The app operates on iOS only. There is no Android app.
 I operate the relay. The relay keeps no data and reads no plaintext. But it is a dependency.
-When you remove the plugin, it also removes the notify agent, the cron entry and the configuration directory.
+When you remove the plugin, it also removes the notify agent, the cron entries, the pairing and the saved check state. The relay URL, the filter settings and the server checks setting stay in /boot/config/plugins/flotilla-agent.
 
 Send your questions and your problem reports to this topic. The plugin is new. I want to know about the problems that you find.
 
