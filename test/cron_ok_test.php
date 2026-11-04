@@ -96,6 +96,22 @@ assert(flotilla_cron_ok() === false);
 flotilla_reassert_cron(); // must not fatal even though update_cron doesn't exist here
 echo "cron_reassert: does not fatal when the underlying update_cron binary is absent\n";
 
+// --- server-checks cron: same three states, through its own file override ---
+$tmpChk = sys_get_temp_dir() . '/flotilla_checkup_cronfile_test_' . getmypid() . '.cron';
+putenv('FLOTILLA_CHECKUP_CRON_FILE=' . $tmpChk);
+assert(flotilla_checkup_cron_file_path() === $tmpChk);
+$checkLine = "*/10 * * * * bash /usr/local/emhttp/plugins/flotilla-agent/scripts/checkup.sh &> /dev/null";
+@unlink($tmpChk);
+file_put_contents($tmpCrontab, "# Generated\n");
+assert(flotilla_checkup_cron_ok() === null);
+file_put_contents($tmpChk, $checkLine . "\n");
+assert(flotilla_checkup_cron_ok() === false);
+file_put_contents($tmpCrontab, "# Generated\n" . $checkLine . "\n");
+assert(flotilla_checkup_cron_ok() === true);
+@unlink($tmpChk);
+putenv('FLOTILLA_CHECKUP_CRON_FILE');
+echo "cron_ok: checkup cron -> null / false / true\n";
+
 @unlink($tmpCronFile);
 @unlink($tmpCrontab);
 putenv('FLOTILLA_CRON_FILE'); // unset overrides

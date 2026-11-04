@@ -98,4 +98,11 @@ exec('bash -c ' . escapeshellarg('source ' . escapeshellarg($tmpCfg) . '; printf
 assert(($lines[0] ?? '') === '11111111-1111-4111-8111-111111111111');
 @unlink($tmpCfg);
 
+// --- server checks: its own action touches only CHECKS ---
+$c = flotilla_apply_save_checks(['CAT_DISKS' => 'yes', 'CHECKS' => 'yes'], ['CHECKS' => 'no']);
+assert($c['CHECKS'] === 'no' && $c['CAT_DISKS'] === 'yes');
+$c = flotilla_apply_save_checks(['CAT_DISKS' => 'yes', 'CHECKS' => 'no'], []);
+assert($c['CHECKS'] === 'yes');
+echo "save_validation: save_checks touches only CHECKS\n";
+
 echo "save_validation ok\n";

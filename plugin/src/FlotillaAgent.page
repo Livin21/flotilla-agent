@@ -21,6 +21,7 @@ require_once '/usr/local/emhttp/plugins/flotilla-agent/include/settings.php';
 // reason). Silent, idempotent, and cheap: a no-op once the entry's already registered.
 flotilla_reassert_cron();
 $cronOk = flotilla_cron_ok();
+$checkupCronOk = flotilla_checkup_cron_ok();
 $cfg = flotilla_read_cfg(); $paired = $cfg['PAIRING_ID'] !== '';
 $csrf = flotilla_csrf_token();
 $csrfField = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf !== false ? $csrf : '') . '">';
@@ -52,6 +53,7 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 .fl-wrap .fl-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
 .fl-wrap .fl-ok{background:#27ae60}
 .fl-wrap .fl-bad{background:#e74c3c}
+.fl-wrap .fl-off{background:#95a5a6}
 .fl-wrap .fl-pair{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
 .fl-wrap .fl-qr{background:#fff;padding:14px;border-radius:10px;display:inline-block;line-height:0;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .fl-wrap .fl-pairtext{flex:1;min-width:260px}
@@ -137,5 +139,17 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 </div>
 </div>
 <?php endif; ?>
+<div class="fl-card"><h4>Server checks</h4>
+<?php if ($cfg['CHECKS'] === 'no'): ?>
+<div class="fl-row"><span class="fl-dot fl-off"></span>Server checks: <b>off</b></div>
+<?php elseif ($checkupCronOk !== null): ?>
+<div class="fl-row"><span class="fl-dot <?= $checkupCronOk ? 'fl-ok' : 'fl-bad' ?>"></span>Checks scheduled: <b><?= $checkupCronOk ? 'yes' : 'no' ?></b>
+<?php if (!$checkupCronOk): ?><span class="fl-muted">— Unraid has not loaded the checks cron entry yet.</span> <form method="post" action="<?= $FL_EP ?>" style="display:inline"><input type="hidden" name="flotilla_action" value="repair_cron"><?= $csrfField ?><button type="submit">Repair</button></form><?php endif; ?></div>
+<?php endif; ?>
+<form method="post" action="<?= $FL_EP ?>"><input type="hidden" name="flotilla_action" value="save_checks"><?= $csrfField ?>
+<label>Run server checks:
+<select name="CHECKS"><option value="yes" <?= $cfg['CHECKS'] !== 'no' ? 'selected' : '' ?>>Yes</option><option value="no" <?= $cfg['CHECKS'] === 'no' ? 'selected' : '' ?>>No</option></select></label>
+<p class="fl-muted">When this is Yes, the agent checks the mover schedule, share free space, and disk load cycles every 10 minutes. A problem creates an Unraid notification. The checks read only saved status files. They do not wake disks.</p>
+<button type="submit">Save</button></form></div>
 <p class="fl-muted" style="font-size:.85em;margin-top:2px">Flotilla Agent <?= htmlspecialchars(FLOTILLA_AGENT_VERSION) ?> · open source: <a href="https://github.com/Livin21/flotilla-agent" target="_blank" rel="noopener">flotilla-agent</a> · <a href="https://github.com/Livin21/flotilla-relay" target="_blank" rel="noopener">flotilla-relay</a></p>
 </div>

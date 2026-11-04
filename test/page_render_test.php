@@ -33,6 +33,9 @@ putenv('FLOTILLA_DYNAMIX_CFG=' . "$tmp/dynamix.cfg");
 putenv('FLOTILLA_HEADERS=' . "$tmp/headers.txt");
 putenv('FLOTILLA_CRON_FILE=' . "$tmp/flotilla.cron");
 putenv('FLOTILLA_CRONTAB=' . "$tmp/crontab");
+putenv('FLOTILLA_CHECKUP_CRON_FILE=' . "$tmp/checkup.cron");
+file_put_contents("$tmp/checkup.cron", "*/10 * * * * bash /usr/local/emhttp/plugins/flotilla-agent/scripts/checkup.sh &> /dev/null\n");
+file_put_contents("$tmp/crontab", "# Generated\n");
 file_put_contents("$tmp/var.ini", "csrf_token=\"test-token-123\"\n");
 
 $src = file_get_contents(__DIR__ . '/../plugin/src/FlotillaAgent.page');
@@ -55,7 +58,7 @@ function render(string $pagePhp, array $get): array {
 function write_cfg(string $path, array $over = []): void {
   $cfg = ['RELAY' => 'https://flotilla-push.livinmathew.com', 'PAIRING_ID' => '', 'SECRET' => '',
           'KEY' => '', 'LEVEL_MIN' => 'warning', 'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes',
-          'CAT_OTHER' => 'yes'];
+          'CAT_OTHER' => 'yes', 'CHECKS' => 'yes'];
   foreach ($over as $k => $v) $cfg[$k] = $v;
   $out = '';
   foreach ($cfg as $k => $v) $out .= $k . '="' . $v . '"' . "\n";
@@ -85,6 +88,24 @@ assert(substr_count($html, 'flotilla:\/\/pair?v=1&id=11111111-1111-4111-8111-111
 assert(substr_count($html, 'flotilla://pair?v=1&amp;id=11111111-1111-4111-8111-111111111111') === 1);
 echo "page_render: paired page renders the pairing QR/code\n";
 
+// --- server checks card: shown paired or not ---
+write_cfg($cfgPath);
+[$rc, $html] = render($pagePhp, []);
+assert($rc === 0, "unpaired page must render: $html");
+foreach (['<h4>Server checks</h4>', 'Run server checks:',
+          'When this is Yes, the agent checks the mover schedule, share free space, and disk load cycles every 10 minutes.',
+          'Checks scheduled: <b>no</b>', '— Unraid has not loaded the checks cron entry yet.'] as $s)
+  assert(strpos($html, $s) !== false, "unpaired page must contain: $s");
+write_cfg($cfgPath, $paired);
+[$rc, $html] = render($pagePhp, []);
+assert(strpos($html, '<h4>Server checks</h4>') !== false, 'paired page has the card too');
+write_cfg($cfgPath, ['CHECKS' => 'no']);
+[$rc, $html] = render($pagePhp, []);
+assert(strpos($html, 'Server checks: <b>off</b>') !== false);
+assert(strpos($html, 'Checks scheduled:') === false);
+echo "page_render: server checks card renders paired or not, off state\n";
+
+write_cfg($cfgPath, $paired);
 // --- I7: an array $_GET['err'] must render, not fatal ----------------------------------------
 [$rc, $html] = render($pagePhp, ['err' => ['x']]);
 assert($rc === 0, "?err[]=x must not fatal the settings page, got exit $rc: $html");
@@ -216,8 +237,16 @@ assert(strpos(file_get_contents($cfgPath), 'PAIRING_ID=""') === false,
        'a token-less POST (already validated+stripped by Unraid\'s prepend) must execute');
 echo "page_render: the direct endpoint executes actions, CSRF enforced only when the token is visible\n";
 
+write_cfg($cfgPath);
+[$rc, $out] = run_direct(['flotilla_action' => 'save_checks', 'CHECKS' => 'no', 'csrf_token' => 'test-token-123']);
+assert($rc === 0, "direct save_checks must exit cleanly: $out");
+$after = file_get_contents($cfgPath);
+assert(strpos($after, 'CHECKS="no"') !== false, "save_checks must write CHECKS=no: $after");
+assert(strpos($after, 'RELAY="https://flotilla-push.livinmathew.com"') !== false, 'save_checks keeps RELAY');
+echo "page_render: save_checks action writes only CHECKS\n";
+
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);
 foreach (['FLOTILLA_CFG', 'FLOTILLA_VAR_INI', 'FLOTILLA_DYNAMIX_CFG', 'FLOTILLA_HEADERS',
-          'FLOTILLA_CRON_FILE', 'FLOTILLA_CRONTAB', 'FLOTILLA_TEST_GET'] as $e) putenv($e);
+          'FLOTILLA_CRON_FILE', 'FLOTILLA_CRONTAB', 'FLOTILLA_CHECKUP_CRON_FILE', 'FLOTILLA_TEST_GET'] as $e) putenv($e);
 echo "page_render ok\n";

@@ -76,6 +76,7 @@ assert($exitPos !== false && $exitPos > $tarPos, 'the tar guard must exit non-ze
 foreach ([
   '/boot/config/plugins/dynamix/notifications/agents' => 'the notify agent shim',
   'flotilla-agent.cron'                               => 'the heartbeat cron file',
+  'flotilla-checkup.cron'                             => 'the server-checks cron file',
   '/usr/local/emhttp/webGui/event/'                   => 'the array event hooks',
 ] as $needle => $what) {
   $pos = strpos($install, $needle);
@@ -163,6 +164,9 @@ assert(!file_exists("$sandbox/boot/config/plugins/flotilla-agent/flotilla-agent-
   'install must sweep packages from older versions off the flash');
 assert(file_exists("$sandbox/boot/config/plugins/flotilla-agent/flotilla-agent-" . FLOTILLA_AGENT_VERSION . '.txz'),
   'install must KEEP the current package (the plugin manager reuses it, MD5-checked)');
+assert(trim((string)file_get_contents("$sandbox/boot/config/plugins/flotilla-agent/flotilla-checkup.cron"))
+    === "*/10 * * * * bash $sandbox/usr/local/emhttp/plugins/flotilla-agent/scripts/checkup.sh &> /dev/null",
+  'install must write the server-checks cron line');
 assert(strpos($out, 'installed') !== false, 'a successful install reports success');
 shell_exec('rm -rf ' . escapeshellarg($sandbox));
 echo "plg: install with a valid package -> shim, cron, hooks, stale packages swept\n";
@@ -212,6 +216,11 @@ assert(strpos($remove, 'flotilla-agent-*.txz') !== false, 'remove must delete pa
 assert(strpos($remove, '/var/local/flotilla-agent.queue') !== false,
   'remove must delete the retry queue (a reinstall before reboot would otherwise drain events '
   . 'sealed under the revoked pairing)');
+assert(strpos($remove, 'flotilla-checkup.cron') !== false
+    && strpos($remove, 'flotilla-checkup.cron') < strpos($remove, "\nupdate_cron"),
+  'remove must delete the checks cron file before update_cron');
+assert(strpos($remove, 'wear.state') !== false, 'remove must delete wear.state');
+assert(strpos($remove, 'rm -rf /var/local/flotilla-agent') !== false, 'remove must delete the checks state dir');
 echo "plg: remove revokes, then clears the dead pairing, and leaves nothing behind\n";
 
 echo "plg ok\n";

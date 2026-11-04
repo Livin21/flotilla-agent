@@ -79,6 +79,8 @@ EOF
 chmod +x &agentsDir;/FlotillaPush.sh
 # heartbeat cron
 echo "* * * * * bash &emhttp;/scripts/heartbeat.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-agent.cron
+# server checks cron (every 10 minutes; checkup.sh exits at once when CHECKS="no")
+echo "*/10 * * * * bash &emhttp;/scripts/checkup.sh &amp;&gt; /dev/null" &gt; &plgPath;/flotilla-checkup.cron
 # I10: this update_cron is provably a no-op on a fresh install -- see the belt-and-braces
 # retry at the end of this block for why -- but it's kept here too since on an update/reinstall
 # our /var/log/plugins/&name;.plg registration may already exist from the prior install, in
@@ -151,12 +153,14 @@ rm -f /usr/local/emhttp/webGui/event/array_started/flotilla-agent /usr/local/emh
 # crontab requires registration to already exist, which it doesn't yet -- that's the actual
 # asymmetry, not this ordering.)
 rm -f &plgPath;/flotilla-agent.cron
+rm -f &plgPath;/flotilla-checkup.cron &plgPath;/wear.state
 update_cron
 # Packages and tmpfs scratch state. The .txz files are ~640KB each on the flash; the /var/local
 # files are on tmpfs (so they'd vanish at reboot anyway) but leaving a stale retry queue behind
 # would otherwise let a reinstall-before-reboot drain events sealed under the revoked pairing.
 rm -f &plgPath;/&name;-*.txz
 rm -f /var/local/flotilla-agent.headers /var/local/flotilla-agent.queue
+rm -rf /var/local/flotilla-agent
 rm -rf &emhttp;
 echo "flotilla-agent removed. The pairing was revoked at the relay and cleared from the flash config,"
 echo "so after a reinstall you must re-pair (Settings -&gt; Flotilla Agent -&gt; Pair) and re-scan the QR"

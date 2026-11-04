@@ -60,7 +60,8 @@ function flotilla_csrf_check($submitted) {
 
 function flotilla_read_cfg() {
   $cfg = ['RELAY' => 'https://flotilla-push.livinmathew.com', 'PAIRING_ID' => '', 'SECRET' => '', 'KEY' => '',
-          'LEVEL_MIN' => 'warning', 'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes', 'CAT_OTHER' => 'yes'];
+          'LEVEL_MIN' => 'warning', 'CAT_DISKS' => 'yes', 'CAT_ARRAY' => 'yes', 'CAT_OTHER' => 'yes',
+          'CHECKS' => 'yes'];
   if (is_readable(FLOTILLA_CFG)) {
     $parsed = parse_ini_file(FLOTILLA_CFG);
     if ($parsed !== false) foreach ($parsed as $k => $v) $cfg[$k] = $v;
@@ -407,6 +408,25 @@ function flotilla_cron_ok() {
   return strpos($have, $want) !== false;
 }
 
+// Server checks cron file (checkup.sh every 10 minutes), written by the .plg next to the heartbeat's.
+function flotilla_checkup_cron_file_path() {
+  $override = getenv('FLOTILLA_CHECKUP_CRON_FILE');
+  return $override !== false ? $override : '/boot/config/plugins/flotilla-agent/flotilla-checkup.cron';
+}
+
+// Same contract as flotilla_cron_ok(), for the server checks line: true / false / null (can't tell).
+function flotilla_checkup_cron_ok() {
+  $cronFile = flotilla_checkup_cron_file_path();
+  if (!is_readable($cronFile)) return null;
+  $want = trim((string)@file_get_contents($cronFile));
+  if ($want === '') return null;
+  $tabPath = flotilla_crontab_path();
+  if (!is_readable($tabPath)) return null;
+  $have = @file_get_contents($tabPath);
+  if (!is_string($have)) return null;
+  return strpos($have, $want) !== false;
+}
+
 // Idempotent, best-effort repair: re-run Unraid's own update_cron so the heartbeat entry
 // (silently dropped by the registration-ordering trap documented above) gets picked up without
 // waiting for a reboot or another plugin's install to trigger it incidentally. Only shells out
@@ -417,7 +437,7 @@ function flotilla_cron_ok() {
 // end-to-end by this repo's test suite (see test/cron_ok_test.php's note); shell_exec's stderr
 // is discarded so a missing/failing binary can never fatal this out.
 function flotilla_reassert_cron() {
-  if (flotilla_cron_ok() !== false) return;
+  if (flotilla_cron_ok() !== false && flotilla_checkup_cron_ok() !== false) return;
   shell_exec('update_cron 2>/dev/null');
 }
 
@@ -443,7 +463,17 @@ function flotilla_apply_save(array $cfg, array $post) {
 /*
  * The set of form actions this page owns.
  */
-const FLOTILLA_ACTIONS = ['pair', 'reset', 'save', 'repair_entities', 'repair_cron', 'test'];
+/*
+ * The server checks card has its own form and action: flotilla_apply_save() resets every CAT_*
+ * to 'no' when missing from POST, so sharing it would wipe the category filters. This touches
+ * only CHECKS.
+ */
+function flotilla_apply_save_checks(array $cfg, array $post): array {
+  $cfg['CHECKS'] = (($post['CHECKS'] ?? null) === 'no') ? 'no' : 'yes';
+  return $cfg;
+}
+
+const FLOTILLA_ACTIONS = ['pair', 'reset', 'save', 'save_checks', 'repair_entities', 'repair_cron', 'test'];
 
 /*
  * THE POST HANDLER ONLY RUNS WHEN THIS FILE IS THE DIRECTLY-REQUESTED SCRIPT
@@ -518,6 +548,10 @@ if ($flotillaIsDirect && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
       // settings page can clear bit 4 at any time, and 'save' is the action a paired user is
       // most likely to hit next.
       flotilla_reassert_entities();
+      break;
+    case 'save_checks':
+      $cfg = flotilla_apply_save_checks($cfg, $_POST);
+      flotilla_write_cfg($cfg);
       break;
     case 'repair_entities':
       // I6: one-click repair for the "Unraid will deliver ... to Flotilla: no" state shown

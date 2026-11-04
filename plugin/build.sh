@@ -66,7 +66,7 @@ rm -f "$TXZ"
 # The .plg install block hard-depends on exactly these two paths existing after extraction (it
 # aborts the install before touching Unraid's notification path if either is missing), so prove
 # they are actually in the archive rather than discovering it on a user's box.
-for want in flotilla-agent/scripts/agent.sh flotilla-agent/flotilla-seal; do
+for want in flotilla-agent/scripts/agent.sh flotilla-agent/scripts/checkup.sh flotilla-agent/flotilla-seal; do
   tar -tJf "$TXZ" | grep -qx "$want" || { echo "build: $TXZ is missing $want" >&2; exit 1; }
 done
 
