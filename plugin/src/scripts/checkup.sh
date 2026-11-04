@@ -250,6 +250,36 @@ $out
 EOF
 }
 
+# W1: Load_Cycle_Count (attribute 193) normalized VALUE at or below 10. Once per disk id, kept in wear.state on the flash drive.
+# Reads only the SMART files Unraid caches. Runs whether or not the array is started.
+check_w1() {
+  [ -d "$SMART_DIR" ] && [ -r "$DISKS_INI" ] || return 0
+  local wear="$ROOT/boot/config/plugins/flotilla-agent/wear.state"
+  local f name id line val raw model
+  for f in "$SMART_DIR"/*; do
+    [ -f "$f" ] || continue
+    name=${f##*/}
+    [ "$name" = flash ] && continue
+    ini_sections "$DISKS_INI" | grep -qxF -- "$name" || continue
+    id=$(ini_get "$DISKS_INI" "$name" id)
+    [ -n "$id" ] || continue
+    line=$(awk '$1 == 193 { print $4 + 0, $10; exit }' "$f" 2>/dev/null)
+    [ -n "$line" ] || continue
+    val=${line%% *}; raw=${line#* }
+    awk -v v="$val" 'BEGIN { exit !(v <= 10) }' || continue
+    if [ -z "$DRY" ]; then
+      [ -r "$wear" ] && grep -qxF -- "$id" "$wear" && continue
+    fi
+    model=$(printf '%s' "${id%_*}" | tr '_' ' ')
+    send "Flotilla SMART check" "$name: load cycle count is near or past the rated limit" \
+      "Load_Cycle_Count on $name ($model) is $raw. The drive reports a normalized value of $val. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. Keep a current backup of the data on this disk." \
+      warning
+    if [ -z "$DRY" ]; then
+      mkdir -p "${wear%/*}" 2>/dev/null && printf '%s\n' "$id" >> "$wear"
+    fi
+  done
+}
+
 main() {
   [ -r "$CFG" ] && . "$CFG"
   [ "${CHECKS:-yes}" = "no" ] && exit 0
@@ -262,6 +292,7 @@ main() {
   fi
   check_m1
   check_f
+  check_w1
   exit 0
 }
 

@@ -329,6 +329,48 @@ t_f_nopool() {
   no_subject "Share appdata"
 }; t t_f_nopool
 
+# --- W1: load cycle count ---
+W1_DESC='Load_Cycle_Count on disk2 (ST2000DM008-2UB102) is 1215433. The drive reports a normalized value of 1. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. Keep a current backup of the data on this disk.'
+worn() { cp "$FX/smart-disk2-worn" "$D/var/local/emhttp/smart/${1:-disk2}"; }
+w1_want() { printf '%s\n' -e "Flotilla SMART check" -s "disk2: load cycle count is near or past the rated limit" -d "$1" -i warning ---; }
+
+NAME="W1 disk2 once"; new_dir
+t_w1() {
+  worn; run_checkup "$D"
+  [ "$(cat "$D/notify.log")" = "$(w1_want "$W1_DESC")" ] || { cat "$D/notify.log"; return 1; }
+  run_checkup "$D"; rm -f "$D/var/local/flotilla-agent/checkup.state"; run_checkup "$D"
+  [ "$(log_count)" = 1 ]
+}; t t_w1
+
+NAME="W1 model with spaces"; new_dir
+t_w1model() {
+  worn; sed -i.bak 's/^id="ST2000DM008-2UB102_SERIAL2"/id="WDC_WD40EFRX-68N32N0_WD-WCC7K1234567"/' "$D/var/local/emhttp/disks.ini"
+  run_checkup "$D"
+  [ "$(log_count)" = 1 ] && grep -qxF 'Load_Cycle_Count on disk2 (WDC WD40EFRX-68N32N0) is 1215433. The drive reports a normalized value of 1. The drive is near or past its rated number of load cycles. This value alone does not show a drive failure. Keep a current backup of the data on this disk.' "$D/notify.log"
+}; t t_w1model
+
+NAME="W1 new disk id notifies again"; new_dir
+t_w1new() {
+  worn; run_checkup "$D"; [ "$(log_count)" = 1 ] || return 1
+  sed -i.bak 's/SERIAL2/SERIALNEW/' "$D/var/local/emhttp/disks.ini"
+  run_checkup "$D"; [ "$(log_count)" = 2 ]
+}; t t_w1new
+
+NAME="orphan smart file ignored"; new_dir
+t_w1orphan() { worn disk9; run_checkup "$D"; [ $? = 0 ] && no_log; }; t t_w1orphan
+
+NAME="healthy disks send nothing"; new_dir
+t_w1healthy() { run_checkup "$D"; no_log && [ ! -e "$D/boot/config/plugins/flotilla-agent/wear.state" ]; }; t t_w1healthy
+
+NAME="W1 dry run touches no state"; new_dir
+t_w1dry() {
+  worn
+  local out
+  out=$(FLOTILLA_DRY_RUN=1 FLOTILLA_ROOT="$D" FLOTILLA_CFG="$D/cfg" FLOTILLA_NOTIFY="$D/notify" bash "$SCRIPT") || return 1
+  echo "$out" | grep -qF 'disk2: load cycle count is near or past the rated limit' || return 1
+  no_log && [ ! -e "$D/boot" ]
+}; t t_w1dry
+
 NAME="formats"
 t_fmt() (
   local r=0
