@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "flotilla-agent">
 <!ENTITY author    "Livin Mathew">
-<!ENTITY version   "2026.08.07">
+<!ENTITY version   "2026.11.05">
 <!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
 <!ENTITY pkg       "&plgPath;/&name;-&version;.txz">
@@ -11,7 +11,15 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" min="7.0.0"
         pluginURL="https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg"
         support="https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/">
-<CHANGES>Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.</CHANGES>
+<CHANGES>
+###2026.11.05
+- Version 2026.11.05 adds server checks. Every 10 minutes, the agent checks the mover schedule, share free space and disk load cycles. When it finds a problem, it creates an Unraid notification.
+- The checks read only saved status files. They do not wake disks.
+- The checks are on by default. To stop them, open Settings > Flotilla Agent, set "Run server checks" to No, and click Save.
+
+###2026.08.07
+- Flotilla Push agent — forwards Unraid notifications to your phone, E2E encrypted.
+</CHANGES>
 
 <!--
   The package itself. Without this element the plugin manager never puts anything on the flash
@@ -31,7 +39,7 @@
 -->
 <FILE Name="&pkg;">
   <URL>https://github.com/Livin21/flotilla-agent/releases/download/&version;/&name;-&version;.txz</URL>
-  <MD5>ff34fb87db914e63372ca4d428f11c59</MD5>
+  <MD5>c1002b8edebd152304e32759c04622b1</MD5>
 </FILE>
 
 <FILE Run="/bin/bash" Method="install">
