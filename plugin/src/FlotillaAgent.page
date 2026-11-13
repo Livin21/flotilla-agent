@@ -73,6 +73,15 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 <div class="fl-card">
 <h4>Flotilla Push</h4>
 <p>Pair this server with the Flotilla iOS app to get your Unraid alerts as push notifications — end-to-end encrypted, so the relay in between can never read them.</p>
+<div class="fl-pair">
+<div class="fl-qr"><div id="fl-appqr"></div></div>
+<div class="fl-pairtext">
+<p style="margin-top:0"><b>This code opens Flotilla on the App Store. It is not the pairing code.</b> To get the pairing code, click <b>Pair with Flotilla…</b> below.</p>
+<p>You need the Flotilla app on your iPhone. The app is free; push notifications need Flotilla Pro (USD 4.99, one time). <a href="<?= FLOTILLA_APP_STORE_URL ?>" target="_blank" rel="noopener">Get Flotilla on the App Store</a></p>
+<p class="fl-muted">To open the App Store on your iPhone, scan the code with the Camera app.</p>
+</div>
+</div>
+<script>new QRCode(document.getElementById("fl-appqr"), {text: <?= json_encode(FLOTILLA_APP_STORE_URL) ?>, width: 120, height: 120});</script>
 <p class="fl-muted">Pairing generates an encryption key that never leaves your network except inside the QR code shown after pairing.</p>
 <form method="post" action="<?= $FL_EP ?>"><input type="hidden" name="flotilla_action" value="pair"><?= $csrfField ?><button type="submit">Pair with Flotilla…</button></form>
 </div>
@@ -86,6 +95,7 @@ $FL_EP = '/plugins/flotilla-agent/include/settings.php';
 <div class="fl-qr"><div id="qr"></div></div>
 <div class="fl-pairtext">
 <p style="margin-top:0">Scan from <b>Flotilla → Settings → Notifications → Set up push for this server</b> (or “Scan a pairing QR”).</p>
+<p class="fl-muted">No Flotilla app on your iPhone yet? <a href="<?= FLOTILLA_APP_STORE_URL ?>" target="_blank" rel="noopener">Get Flotilla on the App Store</a>. Push notifications need Flotilla Pro.</p>
 <p class="fl-muted">Anyone who can see this QR can read your alerts — treat it like a password. Up to 10 devices can scan the same code.</p>
 <p class="fl-muted" style="margin-bottom:4px">Can't scan? Copy the code instead:</p>
 <div class="fl-code">

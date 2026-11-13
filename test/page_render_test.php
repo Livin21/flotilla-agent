@@ -75,7 +75,14 @@ write_cfg($cfgPath);
 assert($rc === 0, "unpaired page must render: $html");
 assert(strpos($html, 'value="pair"') !== false, 'unpaired page offers the pair action');
 assert(strpos($html, 'test-token-123') !== false, 'the CSRF token is stamped into the form');
-echo "page_render: unpaired page renders\n";
+// Every installer lands here first, so the unpaired page must say where the app comes from: a
+// link, and a QR of the same plain URL for someone reading this page on a desktop.
+assert(strpos($html, 'href="https://apps.apple.com/app/id6794414215"') !== false, 'unpaired page links the App Store');
+assert(strpos($html, '>Get Flotilla on the App Store</a>') !== false, 'the link names its destination');
+assert(strpos($html, 'getElementById("fl-appqr"), {text: "https:\/\/apps.apple.com\/app\/id6794414215"') !== false,
+       'unpaired page renders the App Store URL as a QR');
+assert(strpos($html, 'This code opens Flotilla on the App Store. It is not the pairing code.') !== false, 'the App Store QR says, first and in bold, that it is not the pairing QR');
+echo "page_render: unpaired page renders, with the App Store link and QR\n";
 
 // --- paired: renders the QR and the manual code ----------------------------------------------
 write_cfg($cfgPath, $paired);
@@ -86,6 +93,10 @@ assert(strpos($html, '<b>Paired.</b>') !== false);
 // (so `&` becomes `&amp;`) inside the manual-code textarea.
 assert(substr_count($html, 'flotilla:\/\/pair?v=1&id=11111111-1111-4111-8111-111111111111') === 1);
 assert(substr_count($html, 'flotilla://pair?v=1&amp;id=11111111-1111-4111-8111-111111111111') === 1);
+// Paired, the only QR on the page is the pairing QR; the App Store stays a link for a new phone.
+assert(strpos($html, 'fl-appqr') === false, 'paired page has no App Store QR beside the pairing QR');
+assert(strpos($html, 'No Flotilla app on your iPhone yet? <a href="https://apps.apple.com/app/id6794414215"') !== false,
+       'paired page links the App Store for a phone without the app');
 echo "page_render: paired page renders the pairing QR/code\n";
 
 // --- server checks card: shown paired or not ---
