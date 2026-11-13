@@ -1,5 +1,29 @@
 # flotilla-agent
 
+## For Unraid users
+
+Flotilla Agent is an Unraid plugin. It sends your Unraid notifications to the Flotilla app on your
+iPhone, encrypted end to end. It also runs three server checks: mover schedule, share free space and
+disk load cycles. A problem creates an Unraid notification, also when you have not paired a phone.
+
+- You need the Flotilla app on your iPhone. The app is free:
+  [Flotilla on the App Store](https://apps.apple.com/app/id6794414215)
+- Push notifications need Flotilla Pro, which costs USD 4.99 one time.
+- The plugin is free and open source (MIT).
+
+To install and pair:
+
+1. In Unraid, open **Apps**, search for **Flotilla Agent**, and install it.
+2. Open **Settings > Flotilla Agent** and click **Pair with Flotilla**.
+3. In the Flotilla app, open **Settings > Notifications**. Tap **Set up push for** followed by your
+   server's name. If the server is not in the app, tap **Scan a pairing QR**. Then scan the QR code.
+
+Questions and problem reports go to the
+[support topic](https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/).
+The rest of this README is for developers.
+
+## For developers
+
 Server-side companions for **Flotilla Push** — the optional, paid push
 notification feature of [Flotilla](https://livinmathew.com/flotilla), an iOS
 Unraid/Proxmox homelab client app. This repo is everything that runs on *your*
