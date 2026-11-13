@@ -10,7 +10,7 @@ define('FLOTILLA_CFG', getenv('FLOTILLA_CFG') !== false
 define('DYNAMIX_CFG', '/boot/config/plugins/dynamix/dynamix.cfg');
 // Must track plugin/flotilla-agent.plg's <!ENTITY version> -- this is the "installed" side of
 // Task 13 §8's min-agent comparison (see flotilla_min_agent_notice() below).
-define('FLOTILLA_AGENT_VERSION', '2026.11.05');
+define('FLOTILLA_AGENT_VERSION', '2026.11.14');
 // The plain App Store URL, with no campaign or affiliate parameters (CA policy #13 bans referral
 // links, and this audience reads every URL). The settings page links to it and renders it as a QR.
 define('FLOTILLA_APP_STORE_URL', 'https://apps.apple.com/app/id6794414215');

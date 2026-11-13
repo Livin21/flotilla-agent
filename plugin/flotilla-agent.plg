@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "flotilla-agent">
 <!ENTITY author    "Livin Mathew">
-<!ENTITY version   "2026.11.05">
+<!ENTITY version   "2026.11.14">
 <!ENTITY plgPath   "/boot/config/plugins/flotilla-agent">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/flotilla-agent">
 <!ENTITY pkg       "&plgPath;/&name;-&version;.txz">
@@ -12,6 +12,10 @@
         pluginURL="https://raw.githubusercontent.com/Livin21/flotilla-agent/main/plugin/flotilla-agent.plg"
         support="https://forums.unraid.net/topic/200208-plugin-flotilla-agent-encrypted-push-notifications-for-unraid/">
 <CHANGES>
+###2026.11.14
+- The settings page links to the Flotilla app on the App Store.
+- Until you click Pair with Flotilla, the settings page also shows a QR code. Scan it with the iPhone Camera app to open the App Store. It is not the pairing code.
+
 ###2026.11.05
 - Version 2026.11.05 adds server checks. Every 10 minutes, the agent checks the mover schedule, share free space and disk load cycles. When it finds a problem, it creates an Unraid notification.
 - The checks read only saved status files. They do not wake disks.
@@ -39,7 +43,7 @@
 -->
 <FILE Name="&pkg;">
   <URL>https://github.com/Livin21/flotilla-agent/releases/download/&version;/&name;-&version;.txz</URL>
-  <MD5>c1002b8edebd152304e32759c04622b1</MD5>
+  <MD5>58ddedbfbfed4d48043d8a2802767ffc</MD5>
 </FILE>
 
 <FILE Run="/bin/bash" Method="install">
